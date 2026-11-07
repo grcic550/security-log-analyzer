@@ -154,11 +154,6 @@ bool parse_log_line(IpTable *table, const char *line) {
         return false;
     }
 
-    printf("---Extracted text---\n");
-    printf("Temporary date string: %s\n", date);
-    printf("IP Address:            %s\n", ip_address);
-    printf("Status:                %s\n", status);
-
     struct tm date_time = {0};
     time_t final_time;
 

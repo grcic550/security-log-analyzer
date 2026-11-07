@@ -37,7 +37,11 @@ int main(void) {
     test_is_suspicious();
     test_detection_report();
 
-    printf("\nAll test passed!");
+    printf("\nAll test passed!\n");
 
     return 0;
 }
+
+
+
+

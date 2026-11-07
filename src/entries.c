@@ -8,13 +8,13 @@
 #include "entries.h"
 #include "ip_table.h"
 
-struct LogEntry{
+struct LogEntry {
     time_t timestamp;
     char *ip_address;
     char *event_type;
 };
 
-static LogEntry ** log_entry = NULL;
+static LogEntry **log_entry = NULL;
 static size_t log_count = 0;
 static size_t capacity = 0;
 static size_t successful_logins = 0;
@@ -23,23 +23,21 @@ static size_t failed_logins = 0;
 static bool resize_logs();
 static void clear_logs(void);
 
-size_t get_log_count(void){
-    return log_count;
-}
+size_t get_log_count(void) { return log_count; }
 
-size_t count_logs_by_event(const char *event_type){
+size_t count_logs_by_event(const char *event_type) {
 
-    if (strcmp(event_type, "LOGIN_FAILED") == 0){
+    if (strcmp(event_type, "LOGIN_FAILED") == 0) {
         return failed_logins;
-    } else if (strcmp(event_type, "LOGIN_SUCCESS") == 0){
+    } else if (strcmp(event_type, "LOGIN_SUCCESS") == 0) {
         return successful_logins;
     }
 
     return 0;
 }
 
-void log_management_init(void){
-    if (log_entry != NULL){
+void log_management_init(void) {
+    if (log_entry != NULL) {
         return;
     }
 
@@ -48,33 +46,32 @@ void log_management_init(void){
 
     log_entry = malloc(capacity * sizeof(*log_entry));
 
-    if (log_entry == NULL){
+    if (log_entry == NULL) {
         perror("Failed to allocate memory for entry");
         exit(1);
     }
 }
 
-bool add_log(IpTable *table, time_t timestamp, char ip_address[], char event_type[]){
+bool add_log(IpTable *table, time_t timestamp, char ip_address[], char event_type[]) {
 
-    if (ip_address == NULL || event_type == NULL ||
-    ip_address[0] == '\0' || event_type[0] == '\0'){
+    if (ip_address == NULL || event_type == NULL || ip_address[0] == '\0' ||
+        event_type[0] == '\0') {
         return false;
     }
 
-    if (strcmp(event_type, "LOGIN_FAILED") != 0 && 
-    strcmp(event_type, "LOGIN_SUCCESS") != 0){
+    if (strcmp(event_type, "LOGIN_FAILED") != 0 && strcmp(event_type, "LOGIN_SUCCESS") != 0) {
         return false;
-    } 
+    }
 
     LogEntry *new_log = malloc(sizeof(*new_log));
 
-    if (new_log == NULL){
+    if (new_log == NULL) {
         return false;
     }
 
     new_log->ip_address = malloc(strlen(ip_address) + 1);
 
-    if (new_log->ip_address == NULL){
+    if (new_log->ip_address == NULL) {
         perror("Failed allocating memory for ip_address");
         free(new_log);
         return false;
@@ -82,7 +79,7 @@ bool add_log(IpTable *table, time_t timestamp, char ip_address[], char event_typ
 
     new_log->event_type = malloc(strlen(event_type) + 1);
 
-    if(new_log->event_type == NULL){
+    if (new_log->event_type == NULL) {
         perror("Failed to allocate memory for event_type");
         free(new_log->ip_address);
         free(new_log);
@@ -94,8 +91,8 @@ bool add_log(IpTable *table, time_t timestamp, char ip_address[], char event_typ
 
     new_log->timestamp = timestamp;
 
-    if (log_count >= capacity){
-        if (!resize_logs()){
+    if (log_count >= capacity) {
+        if (!resize_logs()) {
             free(new_log->event_type);
             free(new_log->ip_address);
             free(new_log);
@@ -104,17 +101,17 @@ bool add_log(IpTable *table, time_t timestamp, char ip_address[], char event_typ
         }
     }
 
-    if (strcmp(event_type, "LOGIN_SUCCESS") == 0){
+    if (strcmp(event_type, "LOGIN_SUCCESS") == 0) {
         successful_logins++;
-    } else if (strcmp(event_type, "LOGIN_FAILED") == 0){
-        if (!ip_table_insert(table, ip_address)){
+    } else if (strcmp(event_type, "LOGIN_FAILED") == 0) {
+        if (!ip_table_insert(table, ip_address)) {
             fprintf(stderr, "Failed to add IP address to hash table");
             free(new_log->event_type);
             free(new_log->ip_address);
             free(new_log);
             return false;
         }
-        
+
         failed_logins++;
     }
 
@@ -123,11 +120,11 @@ bool add_log(IpTable *table, time_t timestamp, char ip_address[], char event_typ
     return true;
 }
 
-static bool resize_logs(){
+static bool resize_logs() {
 
     size_t new_capacity;
 
-    if (capacity == 0){
+    if (capacity == 0) {
         new_capacity = 10;
     } else {
         new_capacity = capacity * 2;
@@ -135,7 +132,7 @@ static bool resize_logs(){
 
     LogEntry **temp = realloc(log_entry, new_capacity * sizeof(*log_entry));
 
-    if (temp == NULL){
+    if (temp == NULL) {
         perror("Failed to allocate memory for temp of resizing");
         return false;
     }
@@ -146,13 +143,13 @@ static bool resize_logs(){
     return true;
 }
 
-bool parse_log_line(IpTable *table, const char *line){
+bool parse_log_line(IpTable *table, const char *line) {
 
     char date[30];
     char ip_address[20];
     char status[30];
 
-    if (sscanf(line, "%29s %19s %29s", date, ip_address, status) != 3){
+    if (sscanf(line, "%29s %19s %29s", date, ip_address, status) != 3) {
         printf("Error while parsing line!\n");
         return false;
     }
@@ -165,21 +162,21 @@ bool parse_log_line(IpTable *table, const char *line){
     struct tm date_time = {0};
     time_t final_time;
 
-    if (strptime(date, "%Y-%m-%dT%H:%M:%S", &date_time) == NULL){
+    if (strptime(date, "%Y-%m-%dT%H:%M:%S", &date_time) == NULL) {
         printf("Error: Format is not right!\n");
         return false;
     }
 
     final_time = mktime(&date_time);
 
-    if (!add_log(table, final_time, ip_address, status)){
+    if (!add_log(table, final_time, ip_address, status)) {
         return false;
     }
 
     return true;
 }
 
-void log_management_destroy(void){
+void log_management_destroy(void) {
 
     clear_logs();
 
@@ -187,9 +184,9 @@ void log_management_destroy(void){
     capacity = 0;
 }
 
-static void clear_logs(void){
+static void clear_logs(void) {
 
-    for (size_t i = 0; i < log_count; i++){
+    for (size_t i = 0; i < log_count; i++) {
         free(log_entry[i]->ip_address);
         free(log_entry[i]->event_type);
         free(log_entry[i]);

@@ -1,9 +1,9 @@
 #ifndef ENTRIES_H
 #define ENTRIES_H
 
+#include "ip_table.h"
 #include <stdbool.h>
 #include <time.h>
-#include "ip_table.h"
 
 typedef struct LogEntry LogEntry;
 

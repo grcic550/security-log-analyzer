@@ -3,7 +3,7 @@
 
 #include "ip_table.h"
 
-static void test_creation(void){
+static void test_creation(void) {
 
     IpTable *table = ip_table_create(2);
 
@@ -14,7 +14,7 @@ static void test_creation(void){
     ip_table_destroy(table);
 }
 
-static void test_insertion(void){
+static void test_insertion(void) {
 
     IpTable *table = ip_table_create(2);
 
@@ -31,7 +31,7 @@ static void test_insertion(void){
     ip_table_destroy(table);
 }
 
-static void test_duplicate_insertion(void){
+static void test_duplicate_insertion(void) {
 
     IpTable *table = ip_table_create(2);
 
@@ -46,7 +46,7 @@ static void test_duplicate_insertion(void){
     ip_table_destroy(table);
 }
 
-static void test_collisions(void){
+static void test_collisions(void) {
 
     IpTable *table = ip_table_create(2);
 
@@ -66,7 +66,7 @@ static void test_collisions(void){
     ip_table_destroy(table);
 }
 
-static void test_resizing(void){
+static void test_resizing(void) {
     IpTable *table = ip_table_create(2);
 
     assert(table != NULL);
@@ -96,7 +96,7 @@ static void test_resizing(void){
     ip_table_destroy(table);
 }
 
-int main(void){
+int main(void) {
 
     test_collisions();
     test_resizing();
@@ -108,4 +108,3 @@ int main(void){
 
     return 0;
 }
-

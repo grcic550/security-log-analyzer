@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include "detector.h"
 #include "entries.h"
 #include "ip_table.h"
 #define MAX_LENGTH_LINE 256
@@ -50,6 +51,10 @@ int main() {
     printf("192.268.1.10: %zu failed attempt(s)\n", ip_table_get_count(table, "192.168.1.10"));
 
     ip_table_print_report(table);
+
+    size_t suspicious_count = detector_print_alerts(table, 3);
+
+    printf("\nTotal suspicious IP addresses: %zu\n", suspicious_count);
 
     log_management_destroy();
     ip_table_destroy(table);

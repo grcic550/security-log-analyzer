@@ -6,6 +6,7 @@
 
 typedef struct IpEntry IpEntry;
 typedef struct IpTable IpTable;
+typedef void (*IpCallback)(const char *ip_address, size_t failed_attempts, void *context);
 
 IpEntry *create_ip_entry(const char *ip_address);
 bool ip_table_insert(IpTable *table, const char *ip_address);
@@ -15,6 +16,6 @@ void ip_table_destroy(IpTable *table);
 size_t ip_table_get_count(IpTable *table, const char *ip_address);
 void ip_table_print_report(IpTable *table);
 
-void ip_table_foreach(const IpTable *table, void (*callback)(const char *, size_t), void *context);
+void ip_table_foreach(const IpTable *table, IpCallback callback, void *context);
 
 #endif

@@ -181,9 +181,7 @@ size_t ip_table_get_count(IpTable *table, const char *ip_address) {
     return 0;
 }
 
-void ip_table_foreach(const IpTable *table,
-                      void (*callback)(const char *ip_address, size_t failed_attempts,
-                                       void *context)) {
+void ip_table_foreach(const IpTable *table, IpCallback callback, void *context) {
 
     if (table == NULL || callback == NULL) {
         return;

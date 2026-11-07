@@ -14,7 +14,7 @@ TEST_TARGET = build/test_ip_table
 
 TEST_SOURCES = tests/test_ip_table.c src/ip_table.c  
 
-DETECTOR_TEST_TARGET = tests/test_detector
+DETECTOR_TEST_TARGET = build/test_detector
 
 DETECTOR_TEST_SOURCES = tests/test_detector.c src/detector.c src/ip_table.c
 

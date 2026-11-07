@@ -1,0 +1,13 @@
+#Build artifacts
+/build/
+*.o
+*.out
+
+#Previous executable
+/loganalyzer
+
+#Ignore log files (may contain sensitive information)
+*.log
+
+#Allow synthetic example data
+!/examples/sample.log

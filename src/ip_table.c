@@ -83,7 +83,7 @@ bool ip_table_insert(IpTable *table, const char *ip_address) {
     } else if (result == ENTRY_INSERTED) {
         table->entry_count++;
 
-        double load = (double)table->entry_count / table->bucket_count;
+        double load = (double)table->entry_count / (double)table->bucket_count;
         if (load >= 0.75) {
             if (!ip_table_resize(table)) {
                 fprintf(stderr, "Warning: hash table resize failed\n");
@@ -159,7 +159,7 @@ static size_t hash_ip(const char *ip_address, size_t bucket_count) {
     int c;
 
     while ((c = (unsigned char)*ip_address++) != 0) {
-        hash = ((hash << 5) + hash) + c;
+        hash = ((hash << 5) + hash) + (size_t)c;
     }
 
     return hash % bucket_count;

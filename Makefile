@@ -1,6 +1,6 @@
 CC = gcc
 
-CFLAGS = -std=c99 -Wall -Wextra -pedantic -g -fsanitize=address,undefined
+CFLAGS = -std=c99 -Wall -Wextra -Wconversion -pedantic -g -fsanitize=address,undefined
 
 CPPFLAGS = -Iinclude
 
@@ -12,7 +12,7 @@ TARGET = build/loganalyzer
 
 TEST_TARGET = build/test_ip_table
 
-TEST_SOURCES = tests/test_ip_table.c src/ip_table.c  
+TEST_SOURCES = tests/test_ip_table.c src/ip_table.c
 
 DETECTOR_TEST_TARGET = build/test_detector
 
@@ -24,17 +24,18 @@ $(TARGET):$(SOURCES) $(HEADERS)
 	mkdir -p build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SOURCES) -o $(TARGET)
 
-$(TEST_TARGET):$(TEST_SOURCES) include/ip_table.h 
+$(TEST_TARGET):$(TEST_SOURCES) include/ip_table.h
 	mkdir -p build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(TEST_SOURCES) -o $(TEST_TARGET)
 
 $(DETECTOR_TEST_TARGET): $(DETECTOR_TEST_SOURCES) include/detector.h
-	mkdir -p build	
+	mkdir -p build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DETECTOR_TEST_SOURCES) -o $(DETECTOR_TEST_TARGET)
 
-test: $(TEST_TARGET) $(DETECTOR_TEST_TARGET)
+test: $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(DETECTOR_TEST_TARGET)
+	bash tests/test_cli.sh
 
 .PHONY: all clean test
 

@@ -171,6 +171,18 @@ bool parse_log_line(IpTable *table, const char *line) {
     return true;
 }
 
+void log_management_foreach(LogCallback callback, void *context) {
+
+    if (callback == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < log_count; i++) {
+        callback(log_entry[i]->timestamp, log_entry[i]->ip_address, log_entry[i]->event_type,
+                 context);
+    }
+}
+
 void log_management_destroy(void) {
 
     clear_logs();

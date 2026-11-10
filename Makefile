@@ -16,8 +16,11 @@ TEST_SOURCES = tests/test_ip_table.c src/ip_table.c
 
 DETECTOR_TEST_TARGET = build/test_detector
 
-DETECTOR_TEST_SOURCES = tests/test_detector.c src/detector.c src/ip_table.c
+DETECTOR_TEST_SOURCES = tests/test_detector.c src/detector.c src/ip_table.c src/entries.c
 
+ENTRIES_TEST_TARGET = build/test_entries
+
+ENTRIES_TEST_SOURCES = tests/test_entries.c src/entries.c src/ip_table.c
 all:$(TARGET)
 
 $(TARGET):$(SOURCES) $(HEADERS)
@@ -32,12 +35,17 @@ $(DETECTOR_TEST_TARGET): $(DETECTOR_TEST_SOURCES) include/detector.h
 	mkdir -p build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DETECTOR_TEST_SOURCES) -o $(DETECTOR_TEST_TARGET)
 
-test: $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET)
+$(ENTRIES_TEST_TARGET): $(ENTRIES_TEST_SOURCES) include/entries.h include/ip_table.h
+	mkdir -p build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(ENTRIES_TEST_SOURCES) -o $(ENTRIES_TEST_TARGET)
+
+test: $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(DETECTOR_TEST_TARGET)
+	./$(ENTRIES_TEST_TARGET)
 	bash tests/test_cli.sh
 
 .PHONY: all clean test
 
 clean:
-	rm -f $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET)
+	rm -f $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET)

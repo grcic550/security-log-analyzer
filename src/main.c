@@ -1,14 +1,14 @@
-#include <errno.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
+
 
 #include "detector.h"
 #include "entries.h"
 #include "ip_table.h"
+#include <cli_utils.h>
 #define MAX_LENGTH_LINE 256
+
 
 int main(int argc, char *argv[]) {
 
@@ -24,80 +24,25 @@ int main(int argc, char *argv[]) {
             } else {
                 log_path = argv[++i];
             }
-        } else if (strcmp(argv[i], "--threshold") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "'%s' without value!\n", argv[i]);
-                return EXIT_FAILURE;
-            } else {
-                i++;
-
-                if (argv[i][0] == '-') {
-                    fprintf(stderr, "Threshold must be positive!\n");
-                    return EXIT_FAILURE;
-                }
-
-                errno = 0;
-                char *end;
-                unsigned long number = strtoul(argv[i], &end, 10);
-
-                if (errno == ERANGE) {
-                    fprintf(stderr, "Number is out of range!\n");
-                    return EXIT_FAILURE;
-                }
-                if (end == argv[i]) {
-                    fprintf(stderr, "Error! No digits were converted.\n");
-                    return EXIT_FAILURE;
-                }
-                if (*end != '\0') {
-                    fprintf(stderr, "The input contains unconverted characters: %s\n", end);
-                    return EXIT_FAILURE;
-                }
-                if (number == 0) {
-                    fprintf(stderr, "Threshold mush be positive!\n");
-                    return EXIT_FAILURE;
-                }
-                if (number > SIZE_MAX) {
-                    fprintf(stderr, "Error: Value is too large for size_t\n");
-                    return EXIT_FAILURE;
-                }
-
-                threshold = (size_t)number;
-            }
-        } else if(strcmp(argv[i], "--window") == 0){
+        }else if(strcmp(argv[i], "--threshold") == 0){
             if (i + 1 >= argc){
-                fprintf(stderr, "'%s' without value!!!\n", argv[i]);
+                fprintf(stderr, "Missing threshold value!\n");
                 return EXIT_FAILURE;
-            }else {
-                i++;
+            }
 
-                if (argv[i][0] == '-'){
-                    fprintf(stderr, "--window must be positive!!\n");
-                    return EXIT_FAILURE;
-                }
+            if (!parse_positive_size(argv[++i], &threshold)){
+                fprintf(stderr, "Invalid threshold!\n");
+                return EXIT_FAILURE;
+            }
+        }else if(strcmp(argv[i], "--window") == 0){
+            if (i + 1 >= argc){
+                fprintf(stderr, "Missing window value!\n");
+                return EXIT_FAILURE;
+            }
 
-                errno = 0;
-                char *end;
-
-                double number = strtod(argv[i], &end);
-
-                if (errno == ERANGE){
-                    fprintf(stderr, "Error! Window is out of range!!\n");
-                    return EXIT_FAILURE;
-                }
-                if (end == argv[i]){
-                    fprintf(stderr, "Error! No numbers were converted!!\n");
-                    return EXIT_FAILURE;
-                }
-                if (*end != '\0'){
-                    fprintf(stderr, "Error! Input contains unconverted characters: %s\n", end);
-                    return EXIT_FAILURE;
-                }
-                if (!isfinite(number) || number <= 0.0){
-                    fprintf(stderr, "Error!! Window must be positive, finite number!!\n");
-                    return EXIT_FAILURE;
-                }
-
-                window_seconds = number;
+            if (!parse_positive_double(argv[++i], &window_seconds)){
+                fprintf(stderr, "Invalid window!\n");
+                return EXIT_FAILURE;
             }
         } else {
             fprintf(stderr, "Unknown argument: %s\n", argv[i]);

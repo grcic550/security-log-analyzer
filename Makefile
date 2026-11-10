@@ -4,9 +4,9 @@ CFLAGS = -std=c99 -Wall -Wextra -Wconversion -pedantic -g -fsanitize=address,und
 
 CPPFLAGS = -Iinclude
 
-SOURCES = src/main.c src/entries.c src/ip_table.c src/detector.c
+SOURCES = src/main.c src/entries.c src/ip_table.c src/detector.c src/cli_utils.c
 
-HEADERS = include/entries.h include/ip_table.h include/detector.h
+HEADERS = include/entries.h include/ip_table.h include/detector.h include/cli_utils.h
 
 TARGET = build/loganalyzer
 
@@ -21,6 +21,11 @@ DETECTOR_TEST_SOURCES = tests/test_detector.c src/detector.c src/ip_table.c src/
 ENTRIES_TEST_TARGET = build/test_entries
 
 ENTRIES_TEST_SOURCES = tests/test_entries.c src/entries.c src/ip_table.c
+
+CLI_UTILS_TEST_TARGET = build/test_cli_utils
+
+CLI_UTILS_TEST_SOURCES = tests/test_cli_utils.c src/cli_utils.c
+
 all:$(TARGET)
 
 $(TARGET):$(SOURCES) $(HEADERS)
@@ -39,13 +44,18 @@ $(ENTRIES_TEST_TARGET): $(ENTRIES_TEST_SOURCES) include/entries.h include/ip_tab
 	mkdir -p build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(ENTRIES_TEST_SOURCES) -o $(ENTRIES_TEST_TARGET)
 
-test: $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET)
+$(CLI_UTILS_TEST_TARGET): $(CLI_UTILS_TEST_SOURCES) include/cli_utils.h
+	mkdir -p build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(CLI_UTILS_TEST_SOURCES) -o $(CLI_UTILS_TEST_TARGET)
+
+test: $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(DETECTOR_TEST_TARGET)
 	./$(ENTRIES_TEST_TARGET)
+	./$(CLI_UTILS_TEST_TARGET)
 	bash tests/test_cli.sh
 
 .PHONY: all clean test
 
 clean:
-	rm -f $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET)
+	rm -f $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET)

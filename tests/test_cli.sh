@@ -79,3 +79,113 @@ else
     echo "FAIL: Incorrect detection result"
     exit 1
 fi
+
+printf '\n'
+
+output3=$(./build/loganalyzer --file examples/window_test.log --threshold 3)
+
+if printf '%s\n' "$output3" | grep -Fxq "IP addresses with suspicious bursts: 1"; then
+    echo "PASS: Time-window detection"
+else
+    echo "FAIL: Incorrect time-window detection"
+    exit 1
+fi
+
+if ./build/loganalyzer --window 60 > /dev/null 2>&1; then
+    echo "PASS: Valid time window accepted"
+else
+    echo "FAIL: Valid time window rejected"
+    exit 1
+fi
+
+if ./build/loganalyzer --window 0 > /dev/null 2>&1; then
+    echo "FAIL: Window with value 0 accepted"
+    exit 1
+else
+    echo "PASS: Window with value 0 rejected"
+fi
+
+if ./build/loganalyzer --window -10 > /dev/null 2>&1; then
+    echo "FAIL: Window with negative value accepted"
+    exit 1
+else
+    echo "PASS: Window with negative value rejected"
+fi
+
+if ./build/loganalyzer --window abc > /dev/null 2>&1; then
+    echo "FAIL: Non numerical window accepted"
+    exit 1
+else
+    echo "PASS: Non numerical window rejected"
+fi
+
+if ./build/loganalyzer --window 30abc > /dev/null 2>&1; then
+    echo "FAIL: Not clean numerical window accepted"
+    exit 1
+else
+    echo "PASS: Not clean numerical window rejected"
+fi
+
+if ./build/loganalyzer --window nan > /dev/null 2>&1; then
+    echo "FAIL: Not-a-Number value accepted"
+    exit 1
+else
+    echo "PASS: Not-a-Number value rejected"
+fi
+
+if ./build/loganalyzer inf > /dev/null 2>&1; then
+    echo "FAIL: Infinity accepted"
+    exit 1
+else
+    echo "PASS: Infinity rejected"
+fi
+
+if ./build/loganalyzer --window > /dev/null 2>&1; then
+    echo "FAIL: Empty value accepted"
+    exit 1
+else
+    echo "PASS: Empty value rejected"
+fi
+
+if ./build/loganalyzer --window 1.5 > /dev/null 2>&1; then
+    echo "PASS: Decimal value accepted"
+else
+    echo "FAIL: Decimal value not accepted"
+    exit 1
+fi
+
+output4=$(./build/loganalyzer --file examples/window_test.log --threshold 3 --window 60)
+
+if printf '%s\n' "$output4" | grep -Fq "IP addresses with suspicious bursts: 1"; then
+    echo "PASS: Window 60 detects one suspicious IP"
+else
+    echo "FAIL: Incorrect detection for window 60"
+    exit 1
+fi
+
+output5=$(./build/loganalyzer --file examples/window_test.log --threshold 3 --window 50)
+
+if printf '%s\n' "$output5" | grep -Fq "IP addresses with suspicious bursts: 1"; then
+    echo "PASS: Window 50 detects one suspicious IP"
+else
+    echo "FAIL: Incorrect detection for window 50"
+    exit 1
+fi
+
+output6=$(./build/loganalyzer --file examples/window_test.log --threshold 3 --window 30)
+
+if printf '%s\n' "$output6" | grep -Fq "IP addresses with suspicious bursts: 0"; then
+    echo "PASS: Window 30 detects zero suspicious IP"
+else
+    echo "FAIL: Incorrect detection for window 30"
+    exit 1
+fi
+
+output7=$(./build/loganalyzer --file examples/window_test.log --threshold 3 --window 20)
+
+if printf '%s\n' "$output7" | grep -Fq "IP addresses with suspicious bursts: 0"; then
+    echo "PASS: Window 20 detects zero suspicious IP"
+else
+    echo "FAIL: Incorrect detection for window 20"
+    exit 1
+fi

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "detector.h"
 #include "entries.h"
@@ -13,6 +14,7 @@ int main(int argc, char *argv[]) {
 
     const char *log_path = "examples/sample.log";
     size_t threshold = 3;
+    double window_seconds = 60.0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--file") == 0) {
@@ -61,6 +63,42 @@ int main(int argc, char *argv[]) {
 
                 threshold = (size_t)number;
             }
+        } else if(strcmp(argv[i], "--window") == 0){
+            if (i + 1 >= argc){
+                fprintf(stderr, "'%s' without value!!!\n", argv[i]);
+                return EXIT_FAILURE;
+            }else {
+                i++;
+
+                if (argv[i][0] == '-'){
+                    fprintf(stderr, "--window must be positive!!\n");
+                    return EXIT_FAILURE;
+                }
+
+                errno = 0;
+                char *end;
+
+                double number = strtod(argv[i], &end);
+
+                if (errno == ERANGE){
+                    fprintf(stderr, "Error! Window is out of range!!\n");
+                    return EXIT_FAILURE;
+                }
+                if (end == argv[i]){
+                    fprintf(stderr, "Error! No numbers were converted!!\n");
+                    return EXIT_FAILURE;
+                }
+                if (*end != '\0'){
+                    fprintf(stderr, "Error! Input contains unconverted characters: %s\n", end);
+                    return EXIT_FAILURE;
+                }
+                if (!isfinite(number) || number <= 0.0){
+                    fprintf(stderr, "Error!! Window must be positive, finite number!!\n");
+                    return EXIT_FAILURE;
+                }
+
+                window_seconds = number;
+            }
         } else {
             fprintf(stderr, "Unknown argument: %s\n", argv[i]);
             return EXIT_FAILURE;
@@ -103,13 +141,18 @@ int main(int argc, char *argv[]) {
     printf("Successful logins: %10zu\n", count_logs_by_event("LOGIN_SUCCESS"));
     printf("Failed logins:     %10zu\n", count_logs_by_event("LOGIN_FAILED"));
 
-    printf("\\n");
+    printf("\n");
     ip_table_print_report(table);
 
     size_t suspicious_count = detector_print_alerts(table, threshold);
 
-    printf("\nTotal suspicious IP addresses: %zu\n\n", suspicious_count);
+    printf("\nTotal suspicious IP addresses: %zu\n", suspicious_count);
 
+    printf("\n========== TIME-WINDOW SECURITY ALERTS ==========\n");
+
+    size_t window_alerts = detector_analyze_windows(threshold, window_seconds);
+
+    printf("\nIP addresses with suspicious bursts: %zu\n", window_alerts);
     log_management_destroy();
     ip_table_destroy(table);
     return 0;

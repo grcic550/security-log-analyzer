@@ -3,7 +3,7 @@
 #include <assert.h>
 #include <stdio.h>
 
-static void test_positive_size(void){
+static void test_positive_size(void) {
 
     size_t result = 3;
 
@@ -18,7 +18,7 @@ static void test_positive_size(void){
 
     assert(!parse_positive_size("-5", &result));
     assert(result == 10);
-    
+
     assert(!parse_positive_size("   -5", &result));
     assert(result == 10);
 
@@ -38,7 +38,7 @@ static void test_positive_size(void){
     assert(result == 10);
 }
 
-static void test_positive_double(void){
+static void test_positive_double(void) {
 
     double result = 60.0;
 
@@ -53,7 +53,7 @@ static void test_positive_double(void){
 
     assert(!parse_positive_double("-5", &result));
     assert(result == 60.0);
-    
+
     assert(!parse_positive_double("   -5", &result));
     assert(result == 60.0);
 
@@ -76,7 +76,7 @@ static void test_positive_double(void){
     assert(result == 0.5);
 }
 
-int main(void){
+int main(void) {
 
     test_positive_size();
     test_positive_double();

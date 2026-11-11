@@ -11,12 +11,20 @@
 struct LogEntry {
     time_t timestamp;
     char *ip_address;
+    char *username;
+    char *hostname;
     AuthResult result;
 };
 
 typedef struct {
     time_t timestamp;
     char ip_address[64];
+    char username[64];
+    char hostname[128];
+
+    bool has_username;
+    bool has_hostname;
+
     AuthResult result;
 } ParsedLog;
 
@@ -30,6 +38,133 @@ static bool resize_logs();
 static void clear_logs(void);
 
 size_t get_log_count(void) { return log_count; }
+
+bool parse_ssh_log_line(
+    IpTable *table,
+    const char *line,
+    int year
+) {
+
+    if (table == NULL || line == NULL || year < 1900){
+        return false;
+    }
+
+    char hostname[128];
+    char username[64];
+    char ip_address[64];
+    struct tm date_time = {0};
+    time_t final_timestamp;
+    int consumed = 0;
+    int matched = 0;
+    AuthResult auth_result;
+
+    date_time.tm_year = year - 1900;
+    date_time.tm_isdst = -1;
+    
+    char *end = strptime(line, "%b %e %H:%M:%S", &date_time);
+
+    if (end == NULL){
+        return false;
+    }
+
+    final_timestamp = mktime(&date_time);
+
+    if (sscanf(end, " %127s%n", hostname, &consumed) != 1){
+        return false;
+    }
+
+    const char *remaining = end + consumed;
+    int consumed2 = 0;
+
+    matched = sscanf(
+        remaining,
+        " sshd[%*u]: Failed password for %63s from %63s port %*u ssh2 %n",
+        username,
+        ip_address,
+        &consumed2
+    );
+
+    if (matched == 2 && consumed2 > 0){
+        auth_result = AUTH_FAILURE;
+    } else {
+        
+        consumed2 = 0;
+        matched = sscanf(
+            remaining,
+            " sshd[%*u]: Failed password for invalid user %63s from %63s port %*u ssh2 %n",
+            username,
+            ip_address,
+            &consumed2
+        );
+
+        if (matched == 2 && consumed2 > 0){
+            auth_result = AUTH_FAILURE;
+        } else {
+
+            consumed2 = 0;
+            matched = sscanf(
+                remaining,
+                " sshd[%*u]: Accepted password for %63s from %63s port %*u ssh2 %n",
+                username,
+                ip_address,
+                &consumed2
+            );
+
+            if (matched == 2 && consumed2 > 0){
+                auth_result = AUTH_SUCCESS;
+            } else {
+                return false;
+            }
+        }
+    }
+
+    if (consumed2 == 0){
+        return false;
+    }
+
+    const char *ending = remaining + consumed2;
+
+    if (*ending != '\0'){
+        return false;
+    }
+
+    ParsedLog temp = {0};
+
+    temp.timestamp = final_timestamp;
+    strcpy(temp.hostname, hostname);
+    temp.has_hostname = true;
+
+    strcpy(temp.username, username);
+    temp.has_username = true;
+
+    strcpy(temp.ip_address, ip_address);
+    temp.result = auth_result;
+
+    if (!add_log(
+        table, 
+        temp.timestamp,
+        temp.ip_address,
+        temp.has_username ? temp.username : NULL,
+        temp.has_hostname ? temp.hostname : NULL,
+        temp.result    
+    )){
+        return false;
+    }
+
+    return true;
+}
+
+static void free_log_entry(LogEntry *entry){
+
+    if (entry == NULL){
+        return;
+    }
+
+    free(entry->ip_address);
+    free(entry->username);
+    free(entry->hostname);
+    free(entry);
+}
 
 static bool parse_simple_log_line(const char *line, ParsedLog *result) {
     if (line == NULL || result == NULL) {
@@ -118,7 +253,13 @@ void log_management_init(void) {
     }
 }
 
-bool add_log(IpTable *table, time_t timestamp, const char ip_address[], AuthResult result) {
+bool add_log(
+    IpTable *table, time_t timestamp, 
+    const char *ip_address, 
+    const char *username, 
+    const char *hostname, 
+    AuthResult result
+) {
 
     if (table == NULL || ip_address == NULL || ip_address[0] == '\0') {
         return false;
@@ -134,12 +275,40 @@ bool add_log(IpTable *table, time_t timestamp, const char ip_address[], AuthResu
         return false;
     }
 
+    new_log->ip_address = NULL;
+    new_log->username = NULL;
+    new_log->hostname = NULL;
+
     new_log->ip_address = malloc(strlen(ip_address) + 1);
 
     if (new_log->ip_address == NULL) {
-        perror("Failed allocating memory for ip_address");
-        free(new_log);
+        fprintf(stderr, "Failed to allocate memory for IP address!\n");
+        free_log_entry(new_log);
         return false;
+    }
+
+    if (username != NULL){
+        new_log->username = malloc(strlen(username) + 1);
+
+        if (new_log->username == NULL){
+            fprintf(stderr, "Failed to allocate memory for username!\n");
+            free_log_entry(new_log);
+            return false;
+        }
+        strcpy(new_log->username, username);
+
+    }
+
+    if (hostname != NULL){
+        new_log->hostname = malloc(strlen(hostname) +1);
+
+        if (new_log->hostname == NULL){
+            fprintf(stderr, "Failed to allocate memory for hostname!\n");
+            free_log_entry(new_log);
+            return false;
+        }
+        strcpy(new_log->hostname, hostname);
+
     }
 
     strcpy(new_log->ip_address, ip_address);
@@ -147,11 +316,10 @@ bool add_log(IpTable *table, time_t timestamp, const char ip_address[], AuthResu
     new_log->result = result;
     new_log->timestamp = timestamp;
 
+
     if (log_count >= capacity) {
         if (!resize_logs()) {
-            free(new_log->ip_address);
-            free(new_log);
-
+            free_log_entry(new_log);
             return false;
         }
     }
@@ -161,8 +329,7 @@ bool add_log(IpTable *table, time_t timestamp, const char ip_address[], AuthResu
     } else if (result == AUTH_FAILURE) {
         if (!ip_table_insert(table, ip_address)) {
             fprintf(stderr, "Failed to add IP address to hash table");
-            free(new_log->ip_address);
-            free(new_log);
+            free_log_entry(new_log);
             return false;
         }
 
@@ -209,7 +376,14 @@ bool parse_log_line(IpTable *table, const char *line) {
         return false;
     }
 
-    if (!add_log(table, log.timestamp, log.ip_address, log.result)) {
+    if (!add_log(
+        table, 
+        log.timestamp, 
+        log.ip_address,
+        log.has_username ? log.username : NULL, 
+        log.has_hostname ? log.hostname : NULL, 
+        log.result)
+    ) {
         fprintf(stderr, "Error: Failed to add log!!\n");
         return false;
     }
@@ -224,7 +398,15 @@ void log_management_foreach(LogCallback callback, void *context) {
     }
 
     for (size_t i = 0; i < log_count; i++) {
-        callback(log_entry[i]->timestamp, log_entry[i]->ip_address, log_entry[i]->result, context);
+        LogEventView view = {
+            .timestamp = log_entry[i]->timestamp,
+            .ip_address = log_entry[i]->ip_address,
+            .username = log_entry[i]->username,
+            .hostname = log_entry[i]->hostname,
+            .result = log_entry[i]->result
+        };
+
+        callback(&view, context);
     }
 }
 
@@ -239,8 +421,7 @@ void log_management_destroy(void) {
 static void clear_logs(void) {
 
     for (size_t i = 0; i < log_count; i++) {
-        free(log_entry[i]->ip_address);
-        free(log_entry[i]);
+        free_log_entry(log_entry[i]);
     }
 
     log_count = 0;

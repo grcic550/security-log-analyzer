@@ -47,14 +47,13 @@ static int compare_failed_events(const void *a, const void *b) {
     return result;
 }
 
-static void collect_failed_event(time_t timestamp, const char *ip_address, AuthResult result,
-                                 void *context) {
+static void collect_failed_event(const LogEventView *event, void *context) {
     FailureCollector *collector = context;
 
-    if (result == AUTH_FAILURE) {
+    if (event->result == AUTH_FAILURE) {
 
-        collector->events[collector->count].timestamp = timestamp;
-        collector->events[collector->count].ip_address = ip_address;
+        collector->events[collector->count].timestamp = event->timestamp;
+        collector->events[collector->count].ip_address = event->ip_address;
 
         collector->count++;
     }

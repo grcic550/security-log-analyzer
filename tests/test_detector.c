@@ -52,16 +52,9 @@ static void test_failure_burst(void) {
     assert(!has_failure_burst(timestamps_3, 2, 2, 59.0));
 }
 
-static void test_failures_in_window(void){
+static void test_failures_in_window(void) {
 
-    time_t timestamps[] = {
-        1000,
-        1010,
-        1020,
-        1030,
-        1040,
-        2000
-    };
+    time_t timestamps[] = {1000, 1010, 1020, 1030, 1040, 2000};
 
     assert(max_failures_in_window(timestamps, 6, 60.0) == 5);
 
@@ -75,10 +68,7 @@ static void test_failures_in_window(void){
 
     assert(max_failures_in_window(timestamps, 0, 60.0) == 0);
 
-    time_t timestamps2[] = {
-        1000,
-        1060
-    };
+    time_t timestamps2[] = {1000, 1060};
 
     assert(max_failures_in_window(timestamps2, 2, 60.0) == 2);
 }

@@ -2,13 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 #include "detector.h"
 #include "entries.h"
 #include "ip_table.h"
 #include <cli_utils.h>
 #define MAX_LENGTH_LINE 256
-
 
 int main(int argc, char *argv[]) {
 
@@ -24,23 +22,23 @@ int main(int argc, char *argv[]) {
             } else {
                 log_path = argv[++i];
             }
-        }else if(strcmp(argv[i], "--threshold") == 0){
-            if (i + 1 >= argc){
+        } else if (strcmp(argv[i], "--threshold") == 0) {
+            if (i + 1 >= argc) {
                 fprintf(stderr, "Missing threshold value!\n");
                 return EXIT_FAILURE;
             }
 
-            if (!parse_positive_size(argv[++i], &threshold)){
+            if (!parse_positive_size(argv[++i], &threshold)) {
                 fprintf(stderr, "Invalid threshold!\n");
                 return EXIT_FAILURE;
             }
-        }else if(strcmp(argv[i], "--window") == 0){
-            if (i + 1 >= argc){
+        } else if (strcmp(argv[i], "--window") == 0) {
+            if (i + 1 >= argc) {
                 fprintf(stderr, "Missing window value!\n");
                 return EXIT_FAILURE;
             }
 
-            if (!parse_positive_double(argv[++i], &window_seconds)){
+            if (!parse_positive_double(argv[++i], &window_seconds)) {
                 fprintf(stderr, "Invalid window!\n");
                 return EXIT_FAILURE;
             }
@@ -83,8 +81,8 @@ int main(int argc, char *argv[]) {
     printf("\n");
     printf("========== LOG ANALYSIS ==========\n");
     printf("Total events:      %10zu\n", get_log_count());
-    printf("Successful logins: %10zu\n", count_logs_by_event("LOGIN_SUCCESS"));
-    printf("Failed logins:     %10zu\n", count_logs_by_event("LOGIN_FAILED"));
+    printf("Successful logins: %10zu\n", count_logs_by_event(AUTH_SUCCESS));
+    printf("Failed logins:     %10zu\n", count_logs_by_event(AUTH_FAILURE));
 
     printf("\n");
     ip_table_print_report(table);

@@ -47,11 +47,11 @@ static int compare_failed_events(const void *a, const void *b) {
     return result;
 }
 
-static void collect_failed_event(time_t timestamp, const char *ip_address, const char *event_type,
+static void collect_failed_event(time_t timestamp, const char *ip_address, AuthResult result,
                                  void *context) {
     FailureCollector *collector = context;
 
-    if (strcmp(event_type, "LOGIN_FAILED") == 0) {
+    if (result == AUTH_FAILURE) {
 
         collector->events[collector->count].timestamp = timestamp;
         collector->events[collector->count].ip_address = ip_address;
@@ -79,18 +79,16 @@ size_t detector_analyze_windows(size_t threshold, double window_seconds) {
 
     log_management_foreach(collect_failed_event, &collector);
 
-    if (collector.count == 0){
+    if (collector.count == 0) {
         free(events);
         return 0;
     }
 
     qsort(collector.events, collector.count, sizeof(*collector.events), compare_failed_events);
 
-    time_t *group_timestamps = malloc(
-        collector.count * sizeof(*group_timestamps)
-    );
+    time_t *group_timestamps = malloc(collector.count * sizeof(*group_timestamps));
 
-    if (group_timestamps == NULL){
+    if (group_timestamps == NULL) {
         fprintf(stderr, "Failed to allocate memory for timestamps group!\n");
         free(events);
         return 0;
@@ -99,30 +97,26 @@ size_t detector_analyze_windows(size_t threshold, double window_seconds) {
     size_t start = 0;
     size_t count = 0;
 
-    while (start < collector.count){
+    while (start < collector.count) {
 
         size_t end = start + 1;
 
-        while (end < collector.count && strcmp(
-            collector.events[start].ip_address,
-            collector.events[end].ip_address) == 0){
-                end++;
+        while (end < collector.count &&
+               strcmp(collector.events[start].ip_address, collector.events[end].ip_address) == 0) {
+            end++;
         }
 
         size_t group_count = end - start;
 
-        for (size_t j = 0; j < group_count; j++){
+        for (size_t j = 0; j < group_count; j++) {
             group_timestamps[j] = collector.events[start + j].timestamp;
         }
 
         size_t max_attempts = max_failures_in_window(group_timestamps, group_count, window_seconds);
 
-        if (threshold > 0 && max_attempts >= threshold){
+        if (threshold > 0 && max_attempts >= threshold) {
             printf("\n[BRUTE FORCE] %s - %zu failures within %g seconds\n",
-                collector.events[start].ip_address,
-                max_attempts,
-                window_seconds
-            );
+                   collector.events[start].ip_address, max_attempts, window_seconds);
 
             count++;
         }
@@ -178,29 +172,25 @@ bool has_failure_burst(const time_t *timestamps, size_t count, size_t threshold,
     return threshold > 0 && max_failures_in_window(timestamps, count, window_seconds) >= threshold;
 }
 
-size_t max_failures_in_window(
-    const time_t *timestamps,
-    size_t count,
-    double window_seconds
-){
+size_t max_failures_in_window(const time_t *timestamps, size_t count, double window_seconds) {
 
-    if (timestamps == NULL || window_seconds <= 0.0){
+    if (timestamps == NULL || window_seconds <= 0.0) {
         return 0;
     }
 
     size_t max_attempts = 0;
     size_t left = 0;
 
-    for (size_t right = 0; right < count; right++){
+    for (size_t right = 0; right < count; right++) {
         size_t attempts = 0;
 
-        while(difftime(timestamps[right],timestamps[left]) > window_seconds){
+        while (difftime(timestamps[right], timestamps[left]) > window_seconds) {
             left++;
         }
 
         attempts = right - left + 1;
 
-        if (attempts > max_attempts){
+        if (attempts > max_attempts) {
             max_attempts = attempts;
         }
     }

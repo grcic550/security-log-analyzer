@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 #include "detector.h"
 #include "entries.h"
@@ -24,6 +25,348 @@ typedef struct {
     size_t count;
     size_t capacity;
 } FailureCollector;
+
+typedef struct {
+    const char *ip_address;
+    const char *username;
+    time_t timestamp;
+} AccountTargetingEvent;
+
+typedef struct {
+    AccountTargetingEvent *events;
+    size_t count;
+    size_t capacity;
+    bool allocation_failed;
+} AccountTargetingCollector;
+
+typedef struct UsernameNode {
+    const char *username;
+    size_t frequency;
+    struct UsernameNode *next;
+} UsernameNode;
+
+typedef struct {
+    UsernameNode **buckets;
+    size_t bucket_count;
+    size_t distinct_count;
+} UsernameFrequencyTable;
+
+
+static size_t hash_username(
+    const char *username,
+    size_t bucket_count
+){
+
+    unsigned long hash = 5381;
+    int c = 0;
+
+    while ((c = (unsigned char)*username++) != 0){
+        hash = ((hash << 5) + hash) + (size_t)c;
+    }
+
+    return hash % bucket_count;
+}
+
+static bool username_frequency_decrement(
+    UsernameFrequencyTable *table,
+    const char *username
+){
+
+    if (table == NULL || username == NULL || 
+        table->buckets == NULL || table->bucket_count == 0){
+            return false;
+    }
+
+    size_t index = hash_username(username, table->bucket_count);
+
+    UsernameNode *current = table->buckets[index];
+
+    while (current != NULL){
+
+        if (strcmp(current->username, username) == 0){
+
+            if (current->frequency == 0){
+                return false;
+            }
+
+            current->frequency--;
+
+            if (current->frequency == 0){
+                table->distinct_count--;
+            }
+
+            return true;
+        }
+
+        current = current->next;
+    }
+
+    return false;
+}
+
+
+static bool username_frequency_increment(
+    UsernameFrequencyTable *table,
+    const char *username
+){
+    if (table == NULL || username == NULL || 
+        table->buckets == NULL || table->bucket_count == 0){
+
+        return false;
+    }
+
+    size_t index = hash_username(username, table->bucket_count);
+
+    UsernameNode *current = table->buckets[index];
+
+    while (current != NULL){
+
+        if (strcmp(current->username, username) == 0){
+            
+            if (current->frequency == 0){
+                table->distinct_count++;
+            }
+
+            current->frequency++;
+            return true;
+        }
+
+        current = current->next;
+    }
+
+    UsernameNode *new_node = malloc(sizeof(*new_node));
+
+    if (new_node == NULL){
+        return false;
+    }
+
+    new_node->frequency = 1;
+    new_node->username = username;
+    table->distinct_count++;
+
+    new_node->next = table->buckets[index];
+    table->buckets[index] = new_node;
+
+    return true;
+}
+
+static bool username_frequency_init(
+    UsernameFrequencyTable *table,
+    size_t bucket_count
+) {
+
+    if (table == NULL || bucket_count == 0){
+        return false;
+    }
+
+    UsernameNode **new_buckets = calloc(bucket_count, sizeof(*new_buckets));
+
+    if (new_buckets == NULL){
+        return false;    
+    }
+
+    table->buckets = new_buckets;
+    table->bucket_count = bucket_count;
+    table->distinct_count = 0;
+
+    return true;
+}
+
+static void username_frequency_destroy(
+    UsernameFrequencyTable *table
+){
+
+    if (table == NULL){
+        return;
+    }
+
+    for (size_t i = 0; i < table->bucket_count; i++){
+        
+        UsernameNode *current = table->buckets[i];
+
+        while(current != NULL){
+            UsernameNode *next = current->next;
+
+            free(current);
+
+            current = next;
+        }
+    }
+    free(table->buckets);
+    table->buckets = NULL;
+    table->bucket_count = 0;
+    table->distinct_count = 0;
+}
+
+static int compare_account_targeting_events(
+    const void *a,
+    const void *b
+) {
+
+    const AccountTargetingEvent *first = a;
+    const AccountTargetingEvent *second = b;
+
+    int result = strcmp(first->ip_address, second->ip_address);
+
+    if (result == 0){
+
+        if (first->timestamp < second->timestamp){
+            return -1;
+        }
+
+        if (first->timestamp > second->timestamp){
+            return 1;
+        }
+
+        return 0;
+    }
+
+    return result;
+}
+
+static void collect_account_targeting_event(
+    const LogEventView *event,
+    void *context
+) {
+    AccountTargetingCollector *collector = context;
+
+    if (collector->allocation_failed){
+        return;
+    }
+
+    if (event->result == AUTH_FAILURE && event->username != NULL &&
+        event->username[0] != '\0'){
+
+        if (collector->count >= collector->capacity){
+            
+            size_t new_capacity = collector->capacity == 0 ? 8 : 2 * collector->capacity;
+
+            AccountTargetingEvent *temp = realloc(collector->events, new_capacity * sizeof(*temp));
+
+            if (temp == NULL){
+                collector->allocation_failed = true;
+                return;
+            }
+            
+            collector->events = temp;
+            collector->capacity = new_capacity;
+        }
+
+        collector->events[collector->count].ip_address = event->ip_address;
+        collector->events[collector->count].username = event->username;
+        collector->events[collector->count].timestamp = event->timestamp;
+
+        collector->count++;
+    }
+}
+
+bool detector_find_account_targeting(
+    size_t min_distinct_usernames,
+    double window_seconds,
+    AccountTargetingCallback callback,
+    void *context,
+    size_t *alerts_found
+) {
+
+    if (min_distinct_usernames == 0 ||
+        !isfinite(window_seconds) ||
+        window_seconds <= 0.0 ||
+        callback == NULL ||
+        alerts_found == NULL    
+    ) {
+        return false;
+    }
+
+    *alerts_found = 0;
+    AccountTargetingCollector collector = {0};
+
+    log_management_foreach(
+        collect_account_targeting_event,
+        &collector
+    );
+
+    if (collector.allocation_failed) {
+        free(collector.events);
+        return false;
+    }
+
+    if (collector.count > 1){
+        qsort(
+            collector.events,
+            collector.count,
+            sizeof(*collector.events),
+            compare_account_targeting_events
+        );
+    }
+
+    size_t start = 0;
+
+    while (start < collector.count){
+        UsernameFrequencyTable frequencies = {0};
+
+        if (!username_frequency_init(&frequencies, 16)){
+            free(collector.events);
+            return false;
+        }
+
+        size_t end = start + 1;
+
+        while (end < collector.count && strcmp(collector.events[start].ip_address, collector.events[end].ip_address) == 0){
+            end++;
+        }
+
+        size_t left = start;
+
+        for (size_t right = start; right < end; right++){
+
+            while(difftime(
+                collector.events[right].timestamp, 
+                collector.events[left].timestamp
+            ) > window_seconds){
+
+                if (!username_frequency_decrement(
+                    &frequencies,
+                    collector.events[left].username
+                )){
+                    username_frequency_destroy(&frequencies);
+                    free(collector.events);
+                    return false;
+                }
+
+                left++;
+            }
+
+            if (!username_frequency_increment(
+                &frequencies,
+                collector.events[right].username
+            )) {
+                username_frequency_destroy(&frequencies);
+                free(collector.events);
+                return false;
+            }
+
+            if (frequencies.distinct_count >= min_distinct_usernames){
+                AccountTargetingAlert alert = {0};
+
+                alert.ip_address = collector.events[start].ip_address;
+                alert.window_start = collector.events[left].timestamp;
+                alert.window_end = collector.events[right].timestamp;
+                alert.failed_attempts = right - left + 1;
+                alert.distinct_usernames = frequencies.distinct_count;
+
+                callback(&alert, context);
+                (*alerts_found)++;
+                break;
+            }
+        }
+        start = end;
+
+        username_frequency_destroy(&frequencies);
+    }
+
+    free(collector.events);
+    return true;
+}
 
 static int compare_failed_events(const void *a, const void *b) {
 

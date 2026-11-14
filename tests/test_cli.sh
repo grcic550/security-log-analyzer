@@ -47,14 +47,14 @@ else
     echo "PASS: Unknown argument rejected"
 fi
 
-if ./build/loganalyzer --file examples/sample.log > /dev/null 2>&1; then
+if ./build/loganalyzer --file examples/sample.log --format simple > /dev/null 2>&1; then
     echo "PASS: Valid file path"
 else
     echo "FAIL: Invalid file path"
     exit 1
 fi
 
-if ./build/loganalyzer --file nonexistent.log > /dev/null 2>&1; then
+if ./build/loganalyzer --file nonexistent.log --format simple > /dev/null 2>&1; then
     echo "FAIL: Missing file accepted"
     exit 1
 else
@@ -82,7 +82,7 @@ fi
 
 printf '\n'
 
-output3=$(./build/loganalyzer --file examples/window_test.log --threshold 3)
+output3=$(./build/loganalyzer --file examples/window_test.log --format simple --threshold 3)
 
 if printf '%s\n' "$output3" | grep -Fxq "IP addresses with suspicious bursts: 1"; then
     echo "PASS: Time-window detection"
@@ -133,7 +133,7 @@ else
     echo "PASS: Not-a-Number value rejected"
 fi
 
-if ./build/loganalyzer inf > /dev/null 2>&1; then
+if ./build/loganalyzer --window inf > /dev/null 2>&1; then
     echo "FAIL: Infinity accepted"
     exit 1
 else
@@ -154,7 +154,7 @@ else
     exit 1
 fi
 
-output4=$(./build/loganalyzer --file examples/window_test.log --threshold 3 --window 60)
+output4=$(./build/loganalyzer --file examples/window_test.log --format simple --threshold 3 --window 60)
 
 if printf '%s\n' "$output4" | grep -Fq "IP addresses with suspicious bursts: 1"; then
     echo "PASS: Window 60 detects one suspicious IP"
@@ -163,7 +163,7 @@ else
     exit 1
 fi
 
-output5=$(./build/loganalyzer --file examples/window_test.log --threshold 3 --window 50)
+output5=$(./build/loganalyzer --file examples/window_test.log --format simple --threshold 3 --window 50)
 
 if printf '%s\n' "$output5" | grep -Fq "IP addresses with suspicious bursts: 1"; then
     echo "PASS: Window 50 detects one suspicious IP"
@@ -172,7 +172,7 @@ else
     exit 1
 fi
 
-output6=$(./build/loganalyzer --file examples/window_test.log --threshold 3 --window 30)
+output6=$(./build/loganalyzer --file examples/window_test.log --format simple --threshold 3 --window 30)
 
 if printf '%s\n' "$output6" | grep -Fq "IP addresses with suspicious bursts: 0"; then
     echo "PASS: Window 30 detects zero suspicious IP"
@@ -181,11 +181,67 @@ else
     exit 1
 fi
 
-output7=$(./build/loganalyzer --file examples/window_test.log --threshold 3 --window 20)
+output7=$(./build/loganalyzer --file examples/window_test.log --format simple --threshold 3 --window 20)
 
 if printf '%s\n' "$output7" | grep -Fq "IP addresses with suspicious bursts: 0"; then
     echo "PASS: Window 20 detects zero suspicious IP"
 else
     echo "FAIL: Incorrect detection for window 20"
     exit 1
+fi
+
+if ./build/loganalyzer --file examples/sample.log > /dev/null 2>&1; then
+    echo "FAIL: Missing format accepted"
+    exit 1
+else 
+    echo "PASS: Missing format rejected"
+fi
+
+if ./build/loganalyzer --file examples/sample.log --format simple --year 2025 > /dev/null 2>&1; then
+    echo "FAIL: Unnecessary year accepted"
+    exit 1
+else
+    echo "PASS: Unnecessary year rejected"
+fi
+
+if ./build/loganalyzer --year 2025 > /dev/null 2>&1; then
+    echo "FAIL: Year for simple log accepted"
+    exit 1
+else
+    echo "PASS: Year for simple log rejected"
+fi
+
+if ./build/loganalyzer --file examples/ssh_mixed.log --format ssh --year 2025 > /dev/null 2>&1; then
+    echo "PASS: File processed correctly"
+else
+    echo "FAIL: File not processed correctly"
+    exit 1
+fi
+
+if ./build/loganalyzer --file examples/ssh_mixed.log --format ssh > /dev/null 2>&1; then
+    echo "FAIL: SSH log without year accepted"
+    exit 1
+else
+    echo "PASS: SSH log without year rejected"
+fi
+
+if ./build/loganalyzer --file examples/ssh_mixed.log --format ssh --year 1800 > /dev/null 2>&1; then
+    echo "FAIL: Year out of range accepted"
+    exit 1
+else
+    echo "PASS: Year out of range rejected"
+fi
+
+if ./build/loganalyzer --file examples/ssh_mixed.log --format ssh --year 2200 > /dev/null 2>&1; then
+    echo "FAIL: Year out of range accepted"
+    exit 1
+else
+    echo "PASS: Year out of range rejected"
+fi
+
+if ./build/loganalyzer --file examples/ssh_mixed.log --format ssh --year > /dev/null 2>&1; then
+    echo "FAIL: Year without value accepted"
+    exit 1
+else
+    echo "PASS: Year without value rejected"
 fi

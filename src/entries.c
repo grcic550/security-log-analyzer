@@ -39,14 +39,14 @@ static void clear_logs(void);
 
 size_t get_log_count(void) { return log_count; }
 
-bool parse_ssh_log_line(
+ParseStatus parse_ssh_log_line(
     IpTable *table,
     const char *line,
     int year
 ) {
 
     if (table == NULL || line == NULL || year < 1900){
-        return false;
+        return PARSE_ERROR;
     }
 
     char hostname[128];
@@ -64,13 +64,19 @@ bool parse_ssh_log_line(
     char *end = strptime(line, "%b %e %H:%M:%S", &date_time);
 
     if (end == NULL){
-        return false;
+        return PARSE_ERROR;
     }
-
+    struct tm original = date_time;
     final_timestamp = mktime(&date_time);
 
+    if (final_timestamp == (time_t)-1 || date_time.tm_year != original.tm_year || date_time.tm_mon != original.tm_mon ||
+        date_time.tm_mday != original.tm_mday || date_time.tm_hour != original.tm_hour ||
+        date_time.tm_min != original.tm_min || date_time.tm_sec != original.tm_sec){
+            return PARSE_ERROR;
+    }
+
     if (sscanf(end, " %127s%n", hostname, &consumed) != 1){
-        return false;
+        return PARSE_ERROR;
     }
 
     const char *remaining = end + consumed;
@@ -113,19 +119,23 @@ bool parse_ssh_log_line(
             if (matched == 2 && consumed2 > 0){
                 auth_result = AUTH_SUCCESS;
             } else {
-                return false;
+                if (strstr(remaining, "Failed password for ") != NULL ||
+                    strstr(remaining, "Accepted password for ") != NULL){
+                        return PARSE_ERROR;
+                    }
+                return PARSE_IGNORED;
             }
         }
     }
 
     if (consumed2 == 0){
-        return false;
+        return PARSE_ERROR;
     }
 
     const char *ending = remaining + consumed2;
 
     if (*ending != '\0'){
-        return false;
+        return PARSE_ERROR;
     }
 
     ParsedLog temp = {0};
@@ -148,10 +158,10 @@ bool parse_ssh_log_line(
         temp.has_hostname ? temp.hostname : NULL,
         temp.result    
     )){
-        return false;
+        return PARSE_ERROR;
     }
 
-    return true;
+    return PARSE_OK;
 }
 
 static void free_log_entry(LogEntry *entry){
@@ -191,7 +201,14 @@ static bool parse_simple_log_line(const char *line, ParsedLog *result) {
     }
 
     date_time.tm_isdst = -1;
+    struct tm original = date_time;
     final_time = mktime(&date_time);
+
+    if (final_time == (time_t)-1 || date_time.tm_year != original.tm_year || date_time.tm_mon != original.tm_mon ||
+        date_time.tm_mday != original.tm_mday || date_time.tm_hour != original.tm_hour ||
+        date_time.tm_min != original.tm_min || date_time.tm_sec != original.tm_sec){
+            return false;
+        }
 
     ParsedLog temp = {0};
 

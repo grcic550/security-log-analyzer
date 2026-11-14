@@ -236,7 +236,7 @@ static void test_parse_ssh_log_line(void){
         "Failed password for root from "
         "192.168.1.20 port 52341 ssh2";
 
-    assert(parse_ssh_log_line(table, line, 2026));
+    assert(parse_ssh_log_line(table, line, 2026) == PARSE_OK);
     assert(get_log_count() == 1);
     assert(ip_table_get_count(table, "192.168.1.20") == 1);
 
@@ -251,7 +251,7 @@ static void test_parse_ssh_log_line(void){
         "Failed password for root from "
         "192.168.1.20 port 52341 ssh2\n";
     
-    assert(parse_ssh_log_line(table, valid_newline, 2026));
+    assert(parse_ssh_log_line(table, valid_newline, 2026) == PARSE_OK);
     assert(get_log_count() == 2);
     assert(ip_table_get_count(table, "192.168.1.20") == 2);
 
@@ -260,7 +260,7 @@ static void test_parse_ssh_log_line(void){
         "Failed password for root from "
         "192.168.1.20 port 52341";
 
-    assert(!parse_ssh_log_line(table, missing_ssh2, 2026));
+    assert(parse_ssh_log_line(table, missing_ssh2, 2026) == PARSE_ERROR);
     assert(get_log_count() == 2);
     assert(ip_table_get_count(table, "192.168.1.20") == 2);
 
@@ -268,7 +268,7 @@ static void test_parse_ssh_log_line(void){
         "Nov 10 14:30:15 server1 sshd[1234]: "
         "Connection closed by 192.168.1.20 port 52341";
 
-    assert(!parse_ssh_log_line(table, unsupported, 2026));
+    assert(parse_ssh_log_line(table, unsupported, 2026) == PARSE_IGNORED);
     assert(get_log_count() == 2);
     assert(ip_table_get_count(table, "192.168.1.20") == 2);
 
@@ -288,7 +288,7 @@ static void test_parse_ssh_invalid_user(void){
         "Failed password for invalid user admin from "
         "192.168.1.20 port 52342 ssh2\n"; 
 
-    assert(parse_ssh_log_line(table, line, 2026));
+    assert(parse_ssh_log_line(table, line, 2026) == PARSE_OK);
     assert(get_log_count() == 1);
     assert(ip_table_get_count(table, "192.168.1.20") == 1);
 
@@ -314,7 +314,7 @@ static void test_parse_ssh_success(void){
         "Accepted password for ante from "
         "192.168.1.30 port 52343 ssh2\n";
 
-    assert(parse_ssh_log_line(table, line, 2026));
+    assert(parse_ssh_log_line(table, line, 2026) == PARSE_OK);
     assert(get_log_count() == 1);
     assert(ip_table_get_count(table, "192.168.1.30") == 0);
 
@@ -332,7 +332,7 @@ static void test_parse_ssh_success(void){
         "192.168.1.30 port 52343 ssh2JUNK";
 
 
-    assert(!parse_ssh_log_line(table, invalid_suffix, 2026));
+    assert(parse_ssh_log_line(table, invalid_suffix, 2026) == PARSE_ERROR);
     assert(get_log_count() == 1);
     assert(ip_table_get_count(table, "192.168.1.30") == 0);
     assert(count_logs_by_event(AUTH_SUCCESS) == 1);
@@ -344,7 +344,7 @@ static void test_parse_ssh_success(void){
         "192.168.1.30 port 52343 ssh2\n"
         "UNEXPECTED DATA";
 
-    assert(!parse_ssh_log_line(table, invalid_extra_line, 2026));
+    assert(parse_ssh_log_line(table, invalid_extra_line, 2026) == PARSE_ERROR);
     assert(get_log_count() == 1);
     assert(ip_table_get_count(table, "192.168.1.30") == 0);
     assert(count_logs_by_event(AUTH_SUCCESS) == 1);
@@ -355,12 +355,68 @@ static void test_parse_ssh_success(void){
         "Accepted password for ante from "
         "192.168.1.30 ssh2";
 
-    assert(!parse_ssh_log_line(table, invalid_missing_port, 2026));
+    assert(parse_ssh_log_line(table, invalid_missing_port, 2026) == PARSE_ERROR);
     assert(get_log_count() == 1);
     assert(ip_table_get_count(table, "192.168.1.30") == 0);
     assert(count_logs_by_event(AUTH_SUCCESS) == 1);
     assert(count_logs_by_event(AUTH_FAILURE) == 0);
     
+    log_management_destroy();
+    ip_table_destroy(table);
+}
+
+static void test_ssh_parse_status(void){
+
+    log_management_init();
+
+    IpTable *table = ip_table_create(2);
+    assert(table != NULL);
+
+    const char *line = "Nov 14 10:15:00 server1 sshd[1234]: Failed password for root from 192.168.1.20 port 54321 ssh2";
+
+    assert(parse_ssh_log_line(table, line, 2026) == PARSE_OK);
+    assert(get_log_count() == 1);
+    assert(ip_table_get_count(table, "192.168.1.20") == 1);
+
+    const char *connection_closed_event = "Nov 14 10:15:05 server1 sshd[1235]: Connection closed by 192.168.1.30 port 54322";
+
+    assert(parse_ssh_log_line(table, connection_closed_event, 2026) == PARSE_IGNORED);
+    assert(get_log_count() == 1);
+
+    const char *failed_password_event = "Nov 14 10:15:05 server1 sshd[1235]: Failed password for root from";
+    
+    assert(parse_ssh_log_line(table, failed_password_event, 2026) == PARSE_ERROR);
+    assert(get_log_count() == 1);
+
+    log_management_destroy();
+    ip_table_destroy(table);
+}
+
+static void test_ssh_parse_with_year_and_time_normalization(void){
+
+    log_management_init();
+
+    IpTable *table = ip_table_create(2);
+    assert(table != NULL);
+
+    const char *normal_line = "Nov 14 10:15:00 server1 sshd[1234]: Failed password for root from 192.168.1.20 port 54321 ssh2";
+
+    assert(parse_ssh_log_line(table, normal_line, 2025) == PARSE_OK);
+    assert(get_log_count() == 1);
+
+    const char *leap_year = "Feb 29 10:15:00 server1 sshd[1234]: Failed password for root from 192.168.1.20 port 54321 ssh2";
+
+    assert(parse_ssh_log_line(table, leap_year, 2024) == PARSE_OK);
+    assert(get_log_count() == 2);
+
+    assert(parse_ssh_log_line(table, leap_year, 2025) == PARSE_ERROR);
+    assert(get_log_count() == 2);
+
+    const char *invalid_date = "Feb 30 10:15:00 server1 sshd[1234]: Failed password for root from 192.168.1.20 port 54321 ssh2";
+
+    assert(parse_ssh_log_line(table, invalid_date, 2026) == PARSE_ERROR);
+    assert(get_log_count() == 2);
+
     log_management_destroy();
     ip_table_destroy(table);
 }
@@ -374,6 +430,8 @@ int main(void) {
     test_parse_ssh_log_line();
     test_parse_ssh_invalid_user();
     test_parse_ssh_success();
+    test_ssh_parse_status();
+    test_ssh_parse_with_year_and_time_normalization();
 
     printf("\nAll entries test pass!!\n");
 

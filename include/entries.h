@@ -16,8 +16,14 @@ typedef struct {
 } LogEventView;
 typedef void (*LogCallback)(const LogEventView *event, void *context);
 
+typedef enum {
+    PARSE_OK,
+    PARSE_IGNORED,
+    PARSE_ERROR
+} ParseStatus;
+
 bool parse_log_line(IpTable *table, const char *line);
-bool parse_ssh_log_line(
+ParseStatus parse_ssh_log_line(
     IpTable *table,
     const char *line,
     int year

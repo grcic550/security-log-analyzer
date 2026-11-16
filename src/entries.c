@@ -28,6 +28,14 @@ typedef struct {
     AuthResult result;
 } ParsedLog;
 
+struct LogStore {
+    LogEntry **entries;
+    size_t count;
+    size_t capacity;
+    size_t successful_logins;
+    size_t failed_logins;
+};
+
 static LogEntry **log_entry = NULL;
 static size_t log_count = 0;
 static size_t capacity = 0;
@@ -39,16 +47,190 @@ static void clear_logs(void);
 
 size_t get_log_count(void) { return log_count; }
 
-ParseStatus parse_ssh_log_line(
-    IpTable *table,
-    const char *line,
-    int year
-) {
+static void free_log_entry(LogEntry *entry) {
 
-    if (table == NULL || line == NULL || year < 1900){
-        return PARSE_ERROR;
+    if (entry == NULL) {
+        return;
     }
 
+    free(entry->ip_address);
+    free(entry->username);
+    free(entry->hostname);
+    free(entry);
+}
+
+static LogEntry *create_log_entry(const char *ip_address, const char *username,
+                                  const char *hostname, time_t timestamp, AuthResult result) {
+    LogEntry *new_log = malloc(sizeof(*new_log));
+
+    if (new_log == NULL) {
+        return NULL;
+    }
+
+    new_log->ip_address = NULL;
+    new_log->username = NULL;
+    new_log->hostname = NULL;
+
+    new_log->ip_address = malloc(strlen(ip_address) + 1);
+
+    if (new_log->ip_address == NULL) {
+        fprintf(stderr, "Failed to allocate memory for IP address!\n");
+        free_log_entry(new_log);
+        return NULL;
+    }
+
+    if (username != NULL) {
+        new_log->username = malloc(strlen(username) + 1);
+
+        if (new_log->username == NULL) {
+            fprintf(stderr, "Failed to allocate memory for username!\n");
+            free_log_entry(new_log);
+            return NULL;
+        }
+        strcpy(new_log->username, username);
+    }
+
+    if (hostname != NULL) {
+        new_log->hostname = malloc(strlen(hostname) + 1);
+
+        if (new_log->hostname == NULL) {
+            fprintf(stderr, "Failed to allocate memory for hostname!\n");
+            free_log_entry(new_log);
+            return NULL;
+        }
+        strcpy(new_log->hostname, hostname);
+    }
+
+    strcpy(new_log->ip_address, ip_address);
+
+    new_log->result = result;
+    new_log->timestamp = timestamp;
+
+    return new_log;
+}
+
+static bool resize_log_store(LogStore *store) {
+
+    size_t new_capacity = store->capacity == 0 ? 8 : store->capacity * 2;
+
+    LogEntry **temp = realloc(store->entries, new_capacity * sizeof(*store->entries));
+
+    if (temp == NULL) {
+        fprintf(stderr, "Failed to reallocate memory for store!\n");
+        return false;
+    }
+
+    store->entries = temp;
+    store->capacity = new_capacity;
+
+    return true;
+}
+
+LogStore *log_store_create(void) {
+
+    LogStore *new_store = calloc(1, sizeof(*new_store));
+
+    if (new_store == NULL) {
+        fprintf(stderr, "Failed to allocate memory for new store!\n");
+        return NULL;
+    }
+
+    new_store->capacity = 8;
+    new_store->entries = calloc(new_store->capacity, sizeof(*new_store->entries));
+
+    if (new_store->entries == NULL) {
+        fprintf(stderr, "Failed to allocate memory for entries in store!\n");
+        free(new_store);
+        return NULL;
+    }
+
+    return new_store;
+}
+
+bool log_store_add(LogStore *store, IpTable *table, time_t timestamp, const char *ip_address,
+                   const char *username, const char *hostname, AuthResult result) {
+
+    if (store == NULL || table == NULL || ip_address == NULL || ip_address[0] == '\0') {
+        return false;
+    }
+
+    if (result != AUTH_FAILURE && result != AUTH_SUCCESS) {
+        return false;
+    }
+
+    LogEntry *new_log = create_log_entry(ip_address, username, hostname, timestamp, result);
+
+    if (new_log == NULL) {
+        return false;
+    }
+
+    if (store->count >= store->capacity) {
+        if (!resize_log_store(store)) {
+            fprintf(stderr, "Failed to resize store!\n");
+            free_log_entry(new_log);
+            return false;
+        }
+    }
+
+    if (result == AUTH_SUCCESS) {
+        store->successful_logins++;
+    } else if (result == AUTH_FAILURE) {
+        if (!ip_table_insert(table, ip_address)) {
+            free_log_entry(new_log);
+            return false;
+        }
+        store->failed_logins++;
+    }
+
+    store->entries[store->count++] = new_log;
+
+    return true;
+}
+
+size_t log_store_get_count(const LogStore *store) {
+
+    if (store == NULL) {
+        return 0;
+    }
+
+    return store->count;
+}
+
+size_t log_store_count_by_event(const LogStore *store, AuthResult result) {
+
+    if (store == NULL) {
+        return 0;
+    }
+
+    if (result != AUTH_FAILURE && result != AUTH_SUCCESS) {
+        return 0;
+    }
+
+    if (result == AUTH_FAILURE) {
+        return store->failed_logins;
+    }
+
+    return store->successful_logins;
+}
+
+void log_store_foreach(const LogStore *store, LogCallback callback, void *context) {
+
+    if (store == NULL || callback == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < store->count; i++) {
+        LogEventView view = {.timestamp = store->entries[i]->timestamp,
+                             .ip_address = store->entries[i]->ip_address,
+                             .username = store->entries[i]->username,
+                             .hostname = store->entries[i]->hostname,
+                             .result = store->entries[i]->result};
+
+        callback(&view, context);
+    }
+}
+
+static ParseStatus parse_ssh_fields(const char *line, int year, ParsedLog *out) {
     char hostname[128];
     char username[64];
     char ip_address[64];
@@ -60,81 +242,70 @@ ParseStatus parse_ssh_log_line(
 
     date_time.tm_year = year - 1900;
     date_time.tm_isdst = -1;
-    
+
     char *end = strptime(line, "%b %e %H:%M:%S", &date_time);
 
-    if (end == NULL){
+    if (end == NULL) {
         return PARSE_ERROR;
     }
     struct tm original = date_time;
     final_timestamp = mktime(&date_time);
 
-    if (final_timestamp == (time_t)-1 || date_time.tm_year != original.tm_year || date_time.tm_mon != original.tm_mon ||
-        date_time.tm_mday != original.tm_mday || date_time.tm_hour != original.tm_hour ||
-        date_time.tm_min != original.tm_min || date_time.tm_sec != original.tm_sec){
-            return PARSE_ERROR;
+    if (final_timestamp == (time_t)-1 || date_time.tm_year != original.tm_year ||
+        date_time.tm_mon != original.tm_mon || date_time.tm_mday != original.tm_mday ||
+        date_time.tm_hour != original.tm_hour || date_time.tm_min != original.tm_min ||
+        date_time.tm_sec != original.tm_sec) {
+        return PARSE_ERROR;
     }
 
-    if (sscanf(end, " %127s%n", hostname, &consumed) != 1){
+    if (sscanf(end, " %127s%n", hostname, &consumed) != 1) {
         return PARSE_ERROR;
     }
 
     const char *remaining = end + consumed;
     int consumed2 = 0;
 
-    matched = sscanf(
-        remaining,
-        " sshd[%*u]: Failed password for %63s from %63s port %*u ssh2 %n",
-        username,
-        ip_address,
-        &consumed2
-    );
+    matched = sscanf(remaining, " sshd[%*u]: Failed password for %63s from %63s port %*u ssh2 %n",
+                     username, ip_address, &consumed2);
 
-    if (matched == 2 && consumed2 > 0){
+    if (matched == 2 && consumed2 > 0) {
         auth_result = AUTH_FAILURE;
     } else {
-        
-        consumed2 = 0;
-        matched = sscanf(
-            remaining,
-            " sshd[%*u]: Failed password for invalid user %63s from %63s port %*u ssh2 %n",
-            username,
-            ip_address,
-            &consumed2
-        );
 
-        if (matched == 2 && consumed2 > 0){
+        consumed2 = 0;
+        matched =
+            sscanf(remaining,
+                   " sshd[%*u]: Failed password for invalid user %63s from %63s port %*u ssh2 %n",
+                   username, ip_address, &consumed2);
+
+        if (matched == 2 && consumed2 > 0) {
             auth_result = AUTH_FAILURE;
         } else {
 
             consumed2 = 0;
-            matched = sscanf(
-                remaining,
-                " sshd[%*u]: Accepted password for %63s from %63s port %*u ssh2 %n",
-                username,
-                ip_address,
-                &consumed2
-            );
+            matched = sscanf(remaining,
+                             " sshd[%*u]: Accepted password for %63s from %63s port %*u ssh2 %n",
+                             username, ip_address, &consumed2);
 
-            if (matched == 2 && consumed2 > 0){
+            if (matched == 2 && consumed2 > 0) {
                 auth_result = AUTH_SUCCESS;
             } else {
                 if (strstr(remaining, "Failed password for ") != NULL ||
-                    strstr(remaining, "Accepted password for ") != NULL){
-                        return PARSE_ERROR;
-                    }
+                    strstr(remaining, "Accepted password for ") != NULL) {
+                    return PARSE_ERROR;
+                }
                 return PARSE_IGNORED;
             }
         }
     }
 
-    if (consumed2 == 0){
+    if (consumed2 == 0) {
         return PARSE_ERROR;
     }
 
     const char *ending = remaining + consumed2;
 
-    if (*ending != '\0'){
+    if (*ending != '\0') {
         return PARSE_ERROR;
     }
 
@@ -150,30 +321,54 @@ ParseStatus parse_ssh_log_line(
     strcpy(temp.ip_address, ip_address);
     temp.result = auth_result;
 
-    if (!add_log(
-        table, 
-        temp.timestamp,
-        temp.ip_address,
-        temp.has_username ? temp.username : NULL,
-        temp.has_hostname ? temp.hostname : NULL,
-        temp.result    
-    )){
+    *out = temp;
+
+    return PARSE_OK;
+}
+
+ParseStatus parse_ssh_log_line(IpTable *table, const char *line, int year) {
+
+    if (table == NULL || line == NULL || year < 1900) {
+        return PARSE_ERROR;
+    }
+
+    ParsedLog parsed = {0};
+
+    ParseStatus status = parse_ssh_fields(line, year, &parsed);
+
+    if (status != PARSE_OK) {
+        return status;
+    }
+
+    if (!add_log(table, parsed.timestamp, parsed.ip_address,
+                 parsed.has_username ? parsed.username : NULL,
+                 parsed.has_hostname ? parsed.hostname : NULL, parsed.result)) {
         return PARSE_ERROR;
     }
 
     return PARSE_OK;
 }
 
-static void free_log_entry(LogEntry *entry){
-
-    if (entry == NULL){
-        return;
+ParseStatus log_store_parse_ssh_line(LogStore *store, IpTable *table, const char *line, int year) {
+    if (store == NULL || table == NULL || line == NULL) {
+        return PARSE_ERROR;
     }
 
-    free(entry->ip_address);
-    free(entry->username);
-    free(entry->hostname);
-    free(entry);
+    ParsedLog parsed = {0};
+
+    ParseStatus status = parse_ssh_fields(line, year, &parsed);
+
+    if (status != PARSE_OK) {
+        return status;
+    }
+
+    if (!log_store_add(store, table, parsed.timestamp, parsed.ip_address,
+                       parsed.has_username ? parsed.username : NULL,
+                       parsed.has_hostname ? parsed.hostname : NULL, parsed.result)) {
+        return PARSE_ERROR;
+    }
+
+    return PARSE_OK;
 }
 
 static bool parse_simple_log_line(const char *line, ParsedLog *result) {
@@ -204,11 +399,12 @@ static bool parse_simple_log_line(const char *line, ParsedLog *result) {
     struct tm original = date_time;
     final_time = mktime(&date_time);
 
-    if (final_time == (time_t)-1 || date_time.tm_year != original.tm_year || date_time.tm_mon != original.tm_mon ||
-        date_time.tm_mday != original.tm_mday || date_time.tm_hour != original.tm_hour ||
-        date_time.tm_min != original.tm_min || date_time.tm_sec != original.tm_sec){
-            return false;
-        }
+    if (final_time == (time_t)-1 || date_time.tm_year != original.tm_year ||
+        date_time.tm_mon != original.tm_mon || date_time.tm_mday != original.tm_mday ||
+        date_time.tm_hour != original.tm_hour || date_time.tm_min != original.tm_min ||
+        date_time.tm_sec != original.tm_sec) {
+        return false;
+    }
 
     ParsedLog temp = {0};
 
@@ -270,13 +466,8 @@ void log_management_init(void) {
     }
 }
 
-bool add_log(
-    IpTable *table, time_t timestamp, 
-    const char *ip_address, 
-    const char *username, 
-    const char *hostname, 
-    AuthResult result
-) {
+bool add_log(IpTable *table, time_t timestamp, const char *ip_address, const char *username,
+             const char *hostname, AuthResult result) {
 
     if (table == NULL || ip_address == NULL || ip_address[0] == '\0') {
         return false;
@@ -286,53 +477,11 @@ bool add_log(
         return false;
     }
 
-    LogEntry *new_log = malloc(sizeof(*new_log));
+    LogEntry *new_log = create_log_entry(ip_address, username, hostname, timestamp, result);
 
     if (new_log == NULL) {
         return false;
     }
-
-    new_log->ip_address = NULL;
-    new_log->username = NULL;
-    new_log->hostname = NULL;
-
-    new_log->ip_address = malloc(strlen(ip_address) + 1);
-
-    if (new_log->ip_address == NULL) {
-        fprintf(stderr, "Failed to allocate memory for IP address!\n");
-        free_log_entry(new_log);
-        return false;
-    }
-
-    if (username != NULL){
-        new_log->username = malloc(strlen(username) + 1);
-
-        if (new_log->username == NULL){
-            fprintf(stderr, "Failed to allocate memory for username!\n");
-            free_log_entry(new_log);
-            return false;
-        }
-        strcpy(new_log->username, username);
-
-    }
-
-    if (hostname != NULL){
-        new_log->hostname = malloc(strlen(hostname) +1);
-
-        if (new_log->hostname == NULL){
-            fprintf(stderr, "Failed to allocate memory for hostname!\n");
-            free_log_entry(new_log);
-            return false;
-        }
-        strcpy(new_log->hostname, hostname);
-
-    }
-
-    strcpy(new_log->ip_address, ip_address);
-
-    new_log->result = result;
-    new_log->timestamp = timestamp;
-
 
     if (log_count >= capacity) {
         if (!resize_logs()) {
@@ -381,6 +530,27 @@ static bool resize_logs() {
     return true;
 }
 
+bool log_store_parse_simple_line(LogStore *store, IpTable *table, const char *line) {
+
+    if (store == NULL || table == NULL || line == NULL) {
+        return false;
+    }
+
+    ParsedLog parsed = {0};
+
+    if (!parse_simple_log_line(line, &parsed)) {
+        return false;
+    }
+
+    if (!log_store_add(store, table, parsed.timestamp, parsed.ip_address,
+                       parsed.has_username ? parsed.username : NULL,
+                       parsed.has_hostname ? parsed.hostname : NULL, parsed.result)) {
+        return false;
+    }
+
+    return true;
+}
+
 bool parse_log_line(IpTable *table, const char *line) {
 
     if (line == NULL) {
@@ -393,14 +563,8 @@ bool parse_log_line(IpTable *table, const char *line) {
         return false;
     }
 
-    if (!add_log(
-        table, 
-        log.timestamp, 
-        log.ip_address,
-        log.has_username ? log.username : NULL, 
-        log.has_hostname ? log.hostname : NULL, 
-        log.result)
-    ) {
+    if (!add_log(table, log.timestamp, log.ip_address, log.has_username ? log.username : NULL,
+                 log.has_hostname ? log.hostname : NULL, log.result)) {
         fprintf(stderr, "Error: Failed to add log!!\n");
         return false;
     }
@@ -415,13 +579,11 @@ void log_management_foreach(LogCallback callback, void *context) {
     }
 
     for (size_t i = 0; i < log_count; i++) {
-        LogEventView view = {
-            .timestamp = log_entry[i]->timestamp,
-            .ip_address = log_entry[i]->ip_address,
-            .username = log_entry[i]->username,
-            .hostname = log_entry[i]->hostname,
-            .result = log_entry[i]->result
-        };
+        LogEventView view = {.timestamp = log_entry[i]->timestamp,
+                             .ip_address = log_entry[i]->ip_address,
+                             .username = log_entry[i]->username,
+                             .hostname = log_entry[i]->hostname,
+                             .result = log_entry[i]->result};
 
         callback(&view, context);
     }
@@ -433,6 +595,20 @@ void log_management_destroy(void) {
 
     log_entry = NULL;
     capacity = 0;
+}
+
+void log_store_destroy(LogStore *store) {
+
+    if (store == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < store->count; i++) {
+        free_log_entry(store->entries[i]);
+    }
+
+    free(store->entries);
+    free(store);
 }
 
 static void clear_logs(void) {

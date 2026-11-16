@@ -11,10 +11,7 @@ typedef enum {
     DETECTOR_ACCOUNT_TARGETING
 } DetectorMode;
 
-typedef enum {
-    LOG_FORMAT_SIMPLE,
-    LOG_FORMAT_SSH
-} LogFormat;
+typedef enum { LOG_FORMAT_SIMPLE, LOG_FORMAT_SSH } LogFormat;
 
 bool parse_positive_size(const char *text, size_t *result);
 

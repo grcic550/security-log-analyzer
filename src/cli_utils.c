@@ -5,7 +5,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-
 bool parse_positive_size(const char *text, size_t *result) {
 
     if (text == NULL || result == NULL) {

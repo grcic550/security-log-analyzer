@@ -246,7 +246,6 @@ static bool analyze_account_targeting_events(AccountTargetingCollector *collecto
         UsernameFrequencyTable frequencies = {0};
 
         if (!username_frequency_init(&frequencies, 16)) {
-            free(collector->events);
             return false;
         }
 
@@ -266,7 +265,6 @@ static bool analyze_account_targeting_events(AccountTargetingCollector *collecto
 
                 if (!username_frequency_decrement(&frequencies, collector->events[left].username)) {
                     username_frequency_destroy(&frequencies);
-                    free(collector->events);
                     return false;
                 }
 
@@ -275,7 +273,6 @@ static bool analyze_account_targeting_events(AccountTargetingCollector *collecto
 
             if (!username_frequency_increment(&frequencies, collector->events[right].username)) {
                 username_frequency_destroy(&frequencies);
-                free(collector->events);
                 return false;
             }
 
@@ -307,7 +304,7 @@ bool detector_find_account_targeting_in_store(const LogStore *store, size_t min_
                                               size_t *alerts_found) {
 
     if (min_distinct_usernames == 0 || store == NULL || !isfinite(window_seconds) ||
-        window_seconds <= 0.0 || alerts_found == NULL) {
+        window_seconds <= 0.0 || alerts_found == NULL || callback == NULL) {
         return false;
     }
 
@@ -328,41 +325,8 @@ bool detector_find_account_targeting_in_store(const LogStore *store, size_t min_
 
     if (!analyze_account_targeting_events(&collector, min_distinct_usernames, window_seconds,
                                           callback, context, alerts_found)) {
-        return false;
-    }
-
-    free(collector.events);
-
-    return true;
-}
-
-bool detector_find_account_targeting(size_t min_distinct_usernames, double window_seconds,
-                                     AccountTargetingCallback callback, void *context,
-                                     size_t *alerts_found) {
-
-    if (min_distinct_usernames == 0 || !isfinite(window_seconds) || window_seconds <= 0.0 ||
-        callback == NULL || alerts_found == NULL) {
-        return false;
-    }
-
-    *alerts_found = 0;
-    AccountTargetingCollector collector = {0};
-
-    log_management_foreach(collect_account_targeting_event, &collector);
-
-    if (collector.allocation_failed) {
-        free(collector.events);
-        return false;
-    }
-
-    if (collector.count > 1) {
-        qsort(collector.events, collector.count, sizeof(*collector.events),
-              compare_account_targeting_events);
-    }
-
-    if (!analyze_account_targeting_events(&collector, min_distinct_usernames, window_seconds,
-                                          callback, context, alerts_found)) {
-        return false;
+                                        free(collector.events);
+                                        return false;
     }
 
     free(collector.events);
@@ -469,36 +433,6 @@ size_t detector_analyze_windows_in_store(const LogStore *store, size_t threshold
     FailureCollector collector = {.events = events, .count = 0, .capacity = capacity};
 
     log_store_foreach(store, collect_failed_event, &collector);
-
-    if (collector.count == 0) {
-        free(events);
-        return 0;
-    }
-
-    size_t count = analyze_collected_failures(&collector, threshold, window_seconds);
-
-    free(events);
-    return count;
-}
-
-size_t detector_analyze_windows(size_t threshold, double window_seconds) {
-
-    size_t capacity = get_log_count();
-
-    if (capacity == 0) {
-        return 0;
-    }
-
-    FailedEvent *events = malloc(capacity * sizeof(*events));
-
-    if (events == NULL) {
-        fprintf(stderr, "Failed to allocate memory for events!\n");
-        return 0;
-    }
-
-    FailureCollector collector = {.events = events, .count = 0, .capacity = capacity};
-
-    log_management_foreach(collect_failed_event, &collector);
 
     if (collector.count == 0) {
         free(events);

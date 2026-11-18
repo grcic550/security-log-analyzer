@@ -108,20 +108,21 @@ static void verify_account_targeting_alert(const AccountTargetingAlert *alert, v
 
 static void test_detect_account_targeting(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
 
-    assert(add_log(table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1010, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1010, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1020, "192.168.1.20", "test", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1020, "192.168.1.20", "test", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1030, "192.168.1.20", "backup", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1030, "192.168.1.20", "backup", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1040, "192.168.1.20", "support", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1040, "192.168.1.20", "support", "server1", AUTH_FAILURE));
 
     AccountTargetingTestContext context = {0};
     size_t alerts_found = 0;
@@ -131,32 +132,33 @@ static void test_detect_account_targeting(void) {
     context.expected_start = 1000;
     context.expected_end = 1040;
 
-    assert(detector_find_account_targeting(5, 60.0, verify_account_targeting_alert, &context,
+    assert(detector_find_account_targeting_in_store(store, 5, 60.0, verify_account_targeting_alert, &context,
                                            &alerts_found));
 
     assert(alerts_found == 1);
     assert(context.alerts_received == 1);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_account_targeting_same_username(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
 
-    assert(add_log(table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1010, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1010, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1020, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1020, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1030, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1030, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1040, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1040, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
     size_t alerts_found = 0;
     AccountTargetingTestContext context = {0};
@@ -166,32 +168,33 @@ static void test_account_targeting_same_username(void) {
     context.expected_start = 1000;
     context.expected_end = 1040;
 
-    assert(detector_find_account_targeting(5, 60.0, verify_account_targeting_alert, &context,
+    assert(detector_find_account_targeting_in_store(store, 5, 60.0, verify_account_targeting_alert, &context,
                                            &alerts_found));
 
     assert(alerts_found == 0);
     assert(context.alerts_received == 0);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_account_targeting_outside_window(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
 
-    assert(add_log(table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1100, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1100, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1200, "192.168.1.20", "test", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1200, "192.168.1.20", "test", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1300, "192.168.1.20", "backup", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1300, "192.168.1.20", "backup", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1400, "192.168.1.20", "support", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1400, "192.168.1.20", "support", "server1", AUTH_FAILURE));
 
     size_t alerts_found = 0;
     AccountTargetingTestContext context = {0};
@@ -201,32 +204,33 @@ static void test_account_targeting_outside_window(void) {
     context.expected_start = 1000;
     context.expected_end = 1400;
 
-    assert(detector_find_account_targeting(5, 60.0, verify_account_targeting_alert, &context,
+    assert(detector_find_account_targeting_in_store(store, 5, 60.0, verify_account_targeting_alert, &context,
                                            &alerts_found));
 
     assert(alerts_found == 0);
     assert(context.alerts_received == 0);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_account_targeting_different_IP(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
 
-    assert(add_log(table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1010, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1010, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1020, "192.168.1.30", "test", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1020, "192.168.1.30", "test", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1030, "192.168.1.30", "backup", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1030, "192.168.1.30", "backup", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1040, "192.168.1.30", "support", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1040, "192.168.1.30", "support", "server1", AUTH_FAILURE));
 
     size_t alerts_found = 0;
     AccountTargetingTestContext context = {0};
@@ -236,37 +240,39 @@ static void test_account_targeting_different_IP(void) {
     context.expected_start = 1000;
     context.expected_end = 1040;
 
-    assert(detector_find_account_targeting(5, 60.0, verify_account_targeting_alert, &context,
+    assert(detector_find_account_targeting_in_store(store, 5, 60.0, verify_account_targeting_alert, &context,
                                            &alerts_found));
 
     assert(alerts_found == 0);
     assert(context.alerts_received == 0);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_account_targeting_window_expiration(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
+
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
 
-    assert(add_log(table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1010, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1010, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1020, "192.168.1.20", "test", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1020, "192.168.1.20", "test", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1100, "192.168.1.20", "backup", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1100, "192.168.1.20", "backup", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1110, "192.168.1.20", "support", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1110, "192.168.1.20", "support", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1120, "192.168.1.20", "deploy", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1120, "192.168.1.20", "deploy", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1130, "192.168.1.20", "postgres", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1130, "192.168.1.20", "postgres", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1140, "192.168.1.20", "guest", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1140, "192.168.1.20", "guest", "server1", AUTH_FAILURE));
 
     AccountTargetingTestContext context = {0};
     size_t alerts_found = 0;
@@ -276,31 +282,33 @@ static void test_account_targeting_window_expiration(void) {
     context.expected_start = 1100;
     context.expected_end = 1140;
 
-    assert(detector_find_account_targeting(5, 60.0, verify_account_targeting_alert, &context,
+    assert(detector_find_account_targeting_in_store(store, 5, 60.0, verify_account_targeting_alert, &context,
                                            &alerts_found));
 
     assert(alerts_found == 1);
     assert(context.alerts_received == 1);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_account_targeting_out_of_order(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
+
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
 
-    assert(add_log(table, (time_t)1040, "192.168.1.20", "support", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1040, "192.168.1.20", "support", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1030, "192.168.1.20", "backup", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1030, "192.168.1.20", "backup", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1010, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1010, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1020, "192.168.1.20", "test", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1020, "192.168.1.20", "test", "server1", AUTH_FAILURE));
 
     AccountTargetingTestContext context = {0};
     size_t alerts_found = 0;
@@ -310,13 +318,13 @@ static void test_account_targeting_out_of_order(void) {
     context.expected_start = 1000;
     context.expected_end = 1040;
 
-    assert(detector_find_account_targeting(5, 60.0, verify_account_targeting_alert, &context,
+    assert(detector_find_account_targeting_in_store(store, 5, 60.0, verify_account_targeting_alert, &context,
                                            &alerts_found));
 
     assert(alerts_found == 1);
     assert(context.alerts_received == 1);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
@@ -355,27 +363,28 @@ static void verify_multiple_targeting_alerts(const AccountTargetingAlert *alert,
 
 static void test_account_targeting_multiple_alerts(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
 
-    assert(add_log(table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1010, "192.168.1.30", "admin", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1010, "192.168.1.30", "admin", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1020, "192.168.1.20", "test", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1020, "192.168.1.20", "test", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1030, "192.168.1.30", "backup", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1030, "192.168.1.30", "backup", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1040, "192.168.1.20", "support", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1040, "192.168.1.20", "support", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1050, "192.168.1.30", "guest", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1050, "192.168.1.30", "guest", "server1", AUTH_FAILURE));
 
     MultipleAlertsTestContext context = {0};
     size_t alerts_found = 0;
 
-    assert(detector_find_account_targeting(3, 60.0, verify_multiple_targeting_alerts, &context,
+    assert(detector_find_account_targeting_in_store(store, 3, 60.0, verify_multiple_targeting_alerts, &context,
                                            &alerts_found));
 
     assert(context.received_ip20);
@@ -383,26 +392,27 @@ static void test_account_targeting_multiple_alerts(void) {
     assert(alerts_found == 2);
     assert(context.alerts_received == 2);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_account_targeting_ignores_success(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
 
-    assert(add_log(table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1010, "192.168.1.20", "admin", "server1", AUTH_SUCCESS));
+    assert(log_store_add(store, table, (time_t)1010, "192.168.1.20", "admin", "server1", AUTH_SUCCESS));
 
-    assert(add_log(table, (time_t)1020, "192.168.1.20", "test", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1020, "192.168.1.20", "test", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1030, "192.168.1.20", "backup", "server1", AUTH_SUCCESS));
+    assert(log_store_add(store, table, (time_t)1030, "192.168.1.20", "backup", "server1", AUTH_SUCCESS));
 
-    assert(add_log(table, (time_t)1040, "192.168.1.20", "support", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1040, "192.168.1.20", "support", "server1", AUTH_FAILURE));
 
     AccountTargetingTestContext context = {0};
     size_t alerts_found = 0;
@@ -412,26 +422,27 @@ static void test_account_targeting_ignores_success(void) {
     context.expected_start = 1000;
     context.expected_end = 1040;
 
-    assert(detector_find_account_targeting(3, 60.0, verify_account_targeting_alert, &context,
+    assert(detector_find_account_targeting_in_store(store, 3, 60.0, verify_account_targeting_alert, &context,
                                            &alerts_found));
 
     assert(alerts_found == 1);
     assert(context.alerts_received == 1);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_account_targeting_window_boundary(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
 
-    assert(add_log(table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1000, "192.168.1.20", "root", "server1", AUTH_FAILURE));
 
-    assert(add_log(table, (time_t)1060, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1060, "192.168.1.20", "admin", "server1", AUTH_FAILURE));
 
     AccountTargetingTestContext context = {0};
     size_t alerts_found = 0;
@@ -441,40 +452,45 @@ static void test_account_targeting_window_boundary(void) {
     context.expected_start = 1000;
     context.expected_end = 1060;
 
-    assert(detector_find_account_targeting(2, 60.0, verify_account_targeting_alert, &context,
+    assert(detector_find_account_targeting_in_store(store, 2, 60.0, verify_account_targeting_alert, &context,
                                            &alerts_found));
 
     assert(alerts_found == 1);
     assert(context.alerts_received == 1);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_account_targeting_invalid_parameters(void) {
 
+    LogStore *store = log_store_create();
+    assert(store != NULL);
+
     AccountTargetingTestContext context = {0};
     size_t alerts_found = 0;
 
-    assert(!detector_find_account_targeting(0, 60.0, verify_account_targeting_alert, &context,
+    assert(!detector_find_account_targeting_in_store(store, 0, 60.0, verify_account_targeting_alert, &context,
                                             &alerts_found));
 
-    assert(!detector_find_account_targeting(3, 0.0, verify_account_targeting_alert, &context,
+    assert(!detector_find_account_targeting_in_store(store, 3, 0.0, verify_account_targeting_alert, &context,
                                             &alerts_found));
 
-    assert(!detector_find_account_targeting(3, -60.0, verify_account_targeting_alert, &context,
+    assert(!detector_find_account_targeting_in_store(store, 3, -60.0, verify_account_targeting_alert, &context,
                                             &alerts_found));
 
-    assert(!detector_find_account_targeting(3, NAN, verify_account_targeting_alert, &context,
+    assert(!detector_find_account_targeting_in_store(store, 3, NAN, verify_account_targeting_alert, &context,
                                             &alerts_found));
 
-    assert(!detector_find_account_targeting(3, INFINITY, verify_account_targeting_alert, &context,
+    assert(!detector_find_account_targeting_in_store(store, 3, INFINITY, verify_account_targeting_alert, &context,
                                             &alerts_found));
 
-    assert(!detector_find_account_targeting(3, 60.0, NULL, &context, &alerts_found));
+    assert(!detector_find_account_targeting_in_store(store, 3, 60.0, NULL, &context, &alerts_found));
 
     assert(
-        !detector_find_account_targeting(3, 60.0, verify_account_targeting_alert, &context, NULL));
+        !detector_find_account_targeting_in_store(store, 3, 60.0, verify_account_targeting_alert, &context, NULL));
+
+    log_store_destroy(store);
 }
 
 static void test_detector_find_account_targeting_in_store(void) {

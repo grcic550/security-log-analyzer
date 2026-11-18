@@ -29,23 +29,24 @@ static void count_log_callback(const LogEventView *event, void *context) {
 
 static void test_log_foreach(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
 
-    assert(add_log(table, (time_t)1000, "192.168.1.20", NULL, NULL, AUTH_SUCCESS));
-    assert(add_log(table, (time_t)1020, "192.168.1.40", NULL, NULL, AUTH_FAILURE));
-    assert(add_log(table, (time_t)1050, "192.168.1.60", NULL, NULL, AUTH_FAILURE));
+    assert(log_store_add(store,table, (time_t)1000, "192.168.1.20", NULL, NULL, AUTH_SUCCESS));
+    assert(log_store_add(store, table, (time_t)1020, "192.168.1.40", NULL, NULL, AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1050, "192.168.1.60", NULL, NULL, AUTH_FAILURE));
 
     TestLogContext context = {0};
 
-    log_management_foreach(count_log_callback, &context);
+    log_store_foreach(store, count_log_callback, &context);
 
     assert(context.visited == 3);
     assert(context.failed == 2);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
@@ -74,7 +75,8 @@ static void test_parse_auth_result(void) {
 
 static void test_parse_log_line(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(3);
     assert(table != NULL);
@@ -83,13 +85,13 @@ static void test_parse_log_line(void) {
     const char *valid_success = "2026-11-10T14:31:00 192.168.1.30 LOGIN_SUCCESS";
     const char *another_failed = "2026-11-10T14:32:00 192.168.1.20 LOGIN_FAILED";
 
-    assert(parse_log_line(table, valid_failed));
-    assert(parse_log_line(table, valid_success));
-    assert(parse_log_line(table, another_failed));
+    assert(log_store_parse_simple_line(store, table, valid_failed));
+    assert(log_store_parse_simple_line(store, table, valid_success));
+    assert(log_store_parse_simple_line(store, table, another_failed));
 
-    assert(get_log_count() == 3);
-    assert(count_logs_by_event(AUTH_FAILURE) == 2);
-    assert(count_logs_by_event(AUTH_SUCCESS) == 1);
+    assert(log_store_get_count(store) == 3);
+    assert(log_store_count_by_event(store, AUTH_FAILURE) == 2);
+    assert(log_store_count_by_event(store, AUTH_SUCCESS) == 1);
     assert(ip_table_get_count(table, "192.168.1.20") == 2);
     assert(ip_table_get_count(table, "192.168.1.30") == 0);
 
@@ -97,17 +99,17 @@ static void test_parse_log_line(void) {
     const char *invalid_timestamp = "INVALID_DATE 192.168.1.40 LOGIN_FAILED";
     const char *missing_status = "2026-11-10T14:34:00 192.168.1.40";
 
-    assert(!parse_log_line(table, invalid_event));
-    assert(!parse_log_line(table, invalid_timestamp));
-    assert(!parse_log_line(table, missing_status));
+    assert(!log_store_parse_simple_line(store, table, invalid_event));
+    assert(!log_store_parse_simple_line(store, table, invalid_timestamp));
+    assert(!log_store_parse_simple_line(store, table, missing_status));
 
-    assert(get_log_count() == 3);
-    assert(count_logs_by_event(AUTH_FAILURE) == 2);
-    assert(count_logs_by_event(AUTH_SUCCESS) == 1);
+    assert(log_store_get_count(store) == 3);
+    assert(log_store_count_by_event(store, AUTH_FAILURE) == 2);
+    assert(log_store_count_by_event(store, AUTH_SUCCESS) == 1);
     assert(ip_table_get_count(table, "192.168.1.40") == 0);
     assert(ip_table_get_count(table, "192.168.1.20") == 2);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
@@ -133,7 +135,8 @@ static void verify_log_metadata(const LogEventView *event, void *context) {
 
 static void test_log_metadata(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
@@ -141,20 +144,20 @@ static void test_log_metadata(void) {
     char username[] = "ante";
     char hostname[] = "server1";
 
-    assert(add_log(table, (time_t)1000, "192.168.1.20", username, hostname, AUTH_FAILURE));
+    assert(log_store_add(store, table, (time_t)1000, "192.168.1.20", username, hostname, AUTH_FAILURE));
 
     username[0] = 'X';
     hostname[0] = 'X';
 
-    assert(add_log(table, (time_t)1020, "192.168.1.30", NULL, NULL, AUTH_SUCCESS));
+    assert(log_store_add(store, table, (time_t)1020, "192.168.1.30", NULL, NULL, AUTH_SUCCESS));
 
     MetadataTestContext context = {0};
 
-    log_management_foreach(verify_log_metadata, &context);
+    log_store_foreach(store, verify_log_metadata, &context);
 
     assert(context.checked == 2);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
@@ -212,7 +215,8 @@ static void verify_ssh_log_success(const LogEventView *event, void *context) {
 
 static void test_parse_ssh_log_line(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
@@ -221,13 +225,13 @@ static void test_parse_ssh_log_line(void) {
                        "Failed password for root from "
                        "192.168.1.20 port 52341 ssh2";
 
-    assert(parse_ssh_log_line(table, line, 2026) == PARSE_OK);
-    assert(get_log_count() == 1);
+    assert(log_store_parse_ssh_line(store, table, line, 2026) == PARSE_OK);
+    assert(log_store_get_count(store) == 1);
     assert(ip_table_get_count(table, "192.168.1.20") == 1);
 
     MetadataTestContext context = {0};
 
-    log_management_foreach(verify_ssh_log_metadata, &context);
+    log_store_foreach(store, verify_ssh_log_metadata, &context);
 
     assert(context.checked == 1);
 
@@ -235,32 +239,33 @@ static void test_parse_ssh_log_line(void) {
                                 "Failed password for root from "
                                 "192.168.1.20 port 52341 ssh2\n";
 
-    assert(parse_ssh_log_line(table, valid_newline, 2026) == PARSE_OK);
-    assert(get_log_count() == 2);
+    assert(log_store_parse_ssh_line(store, table, valid_newline, 2026) == PARSE_OK);
+    assert(log_store_get_count(store) == 2);
     assert(ip_table_get_count(table, "192.168.1.20") == 2);
 
     const char *missing_ssh2 = "Nov 10 14:30:15 server1 sshd[1234]: "
                                "Failed password for root from "
                                "192.168.1.20 port 52341";
 
-    assert(parse_ssh_log_line(table, missing_ssh2, 2026) == PARSE_ERROR);
-    assert(get_log_count() == 2);
+    assert(log_store_parse_ssh_line(store, table, missing_ssh2, 2026) == PARSE_ERROR);
+    assert(log_store_get_count(store) == 2);
     assert(ip_table_get_count(table, "192.168.1.20") == 2);
 
     const char *unsupported = "Nov 10 14:30:15 server1 sshd[1234]: "
                               "Connection closed by 192.168.1.20 port 52341";
 
-    assert(parse_ssh_log_line(table, unsupported, 2026) == PARSE_IGNORED);
-    assert(get_log_count() == 2);
+    assert(log_store_parse_ssh_line(store, table, unsupported, 2026) == PARSE_IGNORED);
+    assert(log_store_get_count(store) == 2);
     assert(ip_table_get_count(table, "192.168.1.20") == 2);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_parse_ssh_invalid_user(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
@@ -269,23 +274,24 @@ static void test_parse_ssh_invalid_user(void) {
                        "Failed password for invalid user admin from "
                        "192.168.1.20 port 52342 ssh2\n";
 
-    assert(parse_ssh_log_line(table, line, 2026) == PARSE_OK);
-    assert(get_log_count() == 1);
+    assert(log_store_parse_ssh_line(store, table, line, 2026) == PARSE_OK);
+    assert(log_store_get_count(store) == 1);
     assert(ip_table_get_count(table, "192.168.1.20") == 1);
 
     MetadataTestContext context = {0};
 
-    log_management_foreach(verify_ssh_invalid_user, &context);
+    log_store_foreach(store, verify_ssh_invalid_user, &context);
 
     assert(context.checked == 1);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_parse_ssh_success(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
@@ -294,56 +300,57 @@ static void test_parse_ssh_success(void) {
                        "Accepted password for ante from "
                        "192.168.1.30 port 52343 ssh2\n";
 
-    assert(parse_ssh_log_line(table, line, 2026) == PARSE_OK);
-    assert(get_log_count() == 1);
+    assert(log_store_parse_ssh_line(store, table, line, 2026) == PARSE_OK);
+    assert(log_store_get_count(store) == 1);
     assert(ip_table_get_count(table, "192.168.1.30") == 0);
 
     MetadataTestContext context = {0};
 
-    log_management_foreach(verify_ssh_log_success, &context);
+    log_store_foreach(store, verify_ssh_log_success, &context);
 
-    assert(count_logs_by_event(AUTH_SUCCESS) == 1);
-    assert(count_logs_by_event(AUTH_FAILURE) == 0);
+    assert(log_store_count_by_event(store, AUTH_SUCCESS) == 1);
+    assert(log_store_count_by_event(store, AUTH_FAILURE) == 0);
     assert(context.checked == 1);
 
     const char *invalid_suffix = "Nov 10 14:32:00 server1 sshd[1236]: "
                                  "Accepted password for ante from "
                                  "192.168.1.30 port 52343 ssh2JUNK";
 
-    assert(parse_ssh_log_line(table, invalid_suffix, 2026) == PARSE_ERROR);
-    assert(get_log_count() == 1);
+    assert(log_store_parse_ssh_line(store, table, invalid_suffix, 2026) == PARSE_ERROR);
+    assert(log_store_get_count(store) == 1);
     assert(ip_table_get_count(table, "192.168.1.30") == 0);
-    assert(count_logs_by_event(AUTH_SUCCESS) == 1);
-    assert(count_logs_by_event(AUTH_FAILURE) == 0);
+    assert(log_store_count_by_event(store, AUTH_SUCCESS) == 1);
+    assert(log_store_count_by_event(store, AUTH_FAILURE) == 0);
 
     const char *invalid_extra_line = "Nov 10 14:32:00 server1 sshd[1236]: "
                                      "Accepted password for ante from "
                                      "192.168.1.30 port 52343 ssh2\n"
                                      "UNEXPECTED DATA";
 
-    assert(parse_ssh_log_line(table, invalid_extra_line, 2026) == PARSE_ERROR);
-    assert(get_log_count() == 1);
+    assert(log_store_parse_ssh_line(store, table, invalid_extra_line, 2026) == PARSE_ERROR);
+    assert(log_store_get_count(store) == 1);
     assert(ip_table_get_count(table, "192.168.1.30") == 0);
-    assert(count_logs_by_event(AUTH_SUCCESS) == 1);
-    assert(count_logs_by_event(AUTH_FAILURE) == 0);
+    assert(log_store_count_by_event(store, AUTH_SUCCESS) == 1);
+    assert(log_store_count_by_event(store, AUTH_FAILURE) == 0);
 
     const char *invalid_missing_port = "Nov 10 14:32:00 server1 sshd[1236]: "
                                        "Accepted password for ante from "
                                        "192.168.1.30 ssh2";
 
-    assert(parse_ssh_log_line(table, invalid_missing_port, 2026) == PARSE_ERROR);
-    assert(get_log_count() == 1);
+    assert(log_store_parse_ssh_line(store, table, invalid_missing_port, 2026) == PARSE_ERROR);
+    assert(log_store_get_count(store) == 1);
     assert(ip_table_get_count(table, "192.168.1.30") == 0);
-    assert(count_logs_by_event(AUTH_SUCCESS) == 1);
-    assert(count_logs_by_event(AUTH_FAILURE) == 0);
+    assert(log_store_count_by_event(store, AUTH_SUCCESS) == 1);
+    assert(log_store_count_by_event(store, AUTH_FAILURE) == 0);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_ssh_parse_status(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
@@ -351,29 +358,30 @@ static void test_ssh_parse_status(void) {
     const char *line = "Nov 14 10:15:00 server1 sshd[1234]: Failed password for root from "
                        "192.168.1.20 port 54321 ssh2";
 
-    assert(parse_ssh_log_line(table, line, 2026) == PARSE_OK);
-    assert(get_log_count() == 1);
+    assert(log_store_parse_ssh_line(store, table, line, 2026) == PARSE_OK);
+    assert(log_store_get_count(store) == 1);
     assert(ip_table_get_count(table, "192.168.1.20") == 1);
 
     const char *connection_closed_event =
         "Nov 14 10:15:05 server1 sshd[1235]: Connection closed by 192.168.1.30 port 54322";
 
-    assert(parse_ssh_log_line(table, connection_closed_event, 2026) == PARSE_IGNORED);
-    assert(get_log_count() == 1);
+    assert(log_store_parse_ssh_line(store, table, connection_closed_event, 2026) == PARSE_IGNORED);
+    assert(log_store_get_count(store) == 1);
 
     const char *failed_password_event =
         "Nov 14 10:15:05 server1 sshd[1235]: Failed password for root from";
 
-    assert(parse_ssh_log_line(table, failed_password_event, 2026) == PARSE_ERROR);
-    assert(get_log_count() == 1);
+    assert(log_store_parse_ssh_line(store, table, failed_password_event, 2026) == PARSE_ERROR);
+    assert(log_store_get_count(store) == 1);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 
 static void test_ssh_parse_with_year_and_time_normalization(void) {
 
-    log_management_init();
+    LogStore *store = log_store_create();
+    assert(store != NULL);
 
     IpTable *table = ip_table_create(2);
     assert(table != NULL);
@@ -381,25 +389,25 @@ static void test_ssh_parse_with_year_and_time_normalization(void) {
     const char *normal_line = "Nov 14 10:15:00 server1 sshd[1234]: Failed password for root from "
                               "192.168.1.20 port 54321 ssh2";
 
-    assert(parse_ssh_log_line(table, normal_line, 2025) == PARSE_OK);
-    assert(get_log_count() == 1);
+    assert(log_store_parse_ssh_line(store, table, normal_line, 2025) == PARSE_OK);
+    assert(log_store_get_count(store) == 1);
 
     const char *leap_year = "Feb 29 10:15:00 server1 sshd[1234]: Failed password for root from "
                             "192.168.1.20 port 54321 ssh2";
 
-    assert(parse_ssh_log_line(table, leap_year, 2024) == PARSE_OK);
-    assert(get_log_count() == 2);
+    assert(log_store_parse_ssh_line(store, table, leap_year, 2024) == PARSE_OK);
+    assert(log_store_get_count(store) == 2);
 
-    assert(parse_ssh_log_line(table, leap_year, 2025) == PARSE_ERROR);
-    assert(get_log_count() == 2);
+    assert(log_store_parse_ssh_line(store, table, leap_year, 2025) == PARSE_ERROR);
+    assert(log_store_get_count(store) == 2);
 
     const char *invalid_date = "Feb 30 10:15:00 server1 sshd[1234]: Failed password for root from "
                                "192.168.1.20 port 54321 ssh2";
 
-    assert(parse_ssh_log_line(table, invalid_date, 2026) == PARSE_ERROR);
-    assert(get_log_count() == 2);
+    assert(log_store_parse_ssh_line(store, table, invalid_date, 2026) == PARSE_ERROR);
+    assert(log_store_get_count(store) == 2);
 
-    log_management_destroy();
+    log_store_destroy(store);
     ip_table_destroy(table);
 }
 

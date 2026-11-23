@@ -325,8 +325,8 @@ bool detector_find_account_targeting_in_store(const LogStore *store, size_t min_
 
     if (!analyze_account_targeting_events(&collector, min_distinct_usernames, window_seconds,
                                           callback, context, alerts_found)) {
-                                        free(collector.events);
-                                        return false;
+        free(collector.events);
+        return false;
     }
 
     free(collector.events);
@@ -490,7 +490,7 @@ bool has_failure_burst(const time_t *timestamps, size_t count, size_t threshold,
 
 size_t max_failures_in_window(const time_t *timestamps, size_t count, double window_seconds) {
 
-    if (timestamps == NULL || window_seconds <= 0.0) {
+    if (timestamps == NULL || !isfinite(window_seconds) || window_seconds <= 0.0) {
         return 0;
     }
 

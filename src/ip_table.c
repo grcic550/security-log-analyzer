@@ -25,17 +25,21 @@ static bool ip_table_resize(IpTable *table);
 
 IpEntry *create_ip_entry(const char *ip_address) {
 
+    if (ip_address == NULL){
+        return NULL;
+    }
+
     IpEntry *new_entry = malloc(sizeof(*new_entry));
 
     if (new_entry == NULL) {
-        fprintf(stderr, "Failed to allocate memory for new IpEntry");
+        fprintf(stderr, "Failed to allocate memory for new IpEntry\n");
         return NULL;
     }
 
     new_entry->ip_address = malloc(strlen(ip_address) + 1);
 
     if (new_entry->ip_address == NULL) {
-        fprintf(stderr, "Failed to allocate memory for IP address");
+        fprintf(stderr, "Failed to allocate memory for IP address\n");
         free(new_entry);
         return NULL;
     }
@@ -62,7 +66,7 @@ EntryResult add_entry(IpEntry **head, const char *ip_address) {
     IpEntry *new_entry = create_ip_entry(ip_address);
 
     if (new_entry == NULL) {
-        fprintf(stderr, "Failed to add entry because new_entry could not be created.");
+        fprintf(stderr, "Failed to add entry because new_entry could not be created.\n");
         return ENTRY_ERROR;
     }
     new_entry->next = *head;
@@ -73,12 +77,16 @@ EntryResult add_entry(IpEntry **head, const char *ip_address) {
 
 bool ip_table_insert(IpTable *table, const char *ip_address) {
 
+    if (table == NULL || ip_address == NULL){
+        return false;
+    }
+
     size_t index = hash_ip(ip_address, table->bucket_count);
 
     EntryResult result = add_entry(&table->buckets[index], ip_address);
 
     if (result == ENTRY_ERROR) {
-        fprintf(stderr, "Failed to add IP address to the bucket");
+        fprintf(stderr, "Failed to add IP address to the bucket\n");
         return false;
     } else if (result == ENTRY_INSERTED) {
         table->entry_count++;
@@ -167,6 +175,10 @@ static size_t hash_ip(const char *ip_address, size_t bucket_count) {
 
 size_t ip_table_get_count(IpTable *table, const char *ip_address) {
 
+    if (table == NULL || ip_address == NULL){
+        return 0;
+    }
+
     size_t index = hash_ip(ip_address, table->bucket_count);
 
     IpEntry *temp = table->buckets[index];
@@ -199,6 +211,10 @@ void ip_table_foreach(const IpTable *table, IpCallback callback, void *context) 
 }
 
 void ip_table_print_report(IpTable *table) {
+
+    if (table == NULL){
+        return;
+    }
 
     printf("\n========== FAILED LOGINS BY IP ==========\n");
 

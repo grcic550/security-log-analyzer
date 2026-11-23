@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/types.h>
 #include <time.h>
 
@@ -13,24 +14,76 @@
 #include "entries.h"
 #include "ip_table.h"
 
-static bool format_timestamp(time_t timestamp, char *buffer, size_t buffer_size) {
-    struct tm *time_info = localtime(&timestamp);
+static const char *parse_issue_message(ParseIssue issue) {
 
-    if (time_info == NULL) {
+    switch (issue) {
+    case PARSE_ISSUE_NONE:
+        return "No parsing issue";
+
+    case PARSE_ISSUE_FIELD_COUNT:
+        return "Invalid number of fields";
+
+    case PARSE_ISSUE_FIELD_TOO_LONG:
+        return "A field exceeds its maximum length";
+
+    case PARSE_ISSUE_INVALID_IP:
+        return "Invalid IP address!";
+
+    case PARSE_ISSUE_INVALID_STATUS:
+        return "Invalid status!";
+
+    case PARSE_ISSUE_INVALID_TIMESTAMP:
+        return "Invalid timestamp!";
+
+    case PARSE_ISSUE_STORAGE_FAILURE:
+        return "Storage failure!";
+    
+    case PARSE_ISSUE_MALFORMED_SSH:
+        return "Malformed SSH line!";
+    
+    case PARSE_ISSUE_INVALID_PORT:
+        return "Invalid port!";
+
+    case PARSE_ISSUE_INVALID_PROCESS:
+        return "Invalid process!";
+
+    default:
+        return "Unknown parsing error!";
+    }
+}
+
+static bool format_timestamp(time_t timestamp, TimestampMode mode, char *buffer,
+                             size_t buffer_size) {
+    struct tm time_info;
+
+    if (mode == TIMESTAMP_LOCAL) {
+        if (!localtime_r(&timestamp, &time_info)) {
+            return false;
+        }
+    } else if (mode == TIMESTAMP_UTC) {
+        if (!gmtime_r(&timestamp, &time_info)) {
+            return false;
+        }
+    } else {
         return false;
     }
 
-    return strftime(buffer, buffer_size, "%Y-%m-%d %H:%M:%S", time_info) != 0;
+    return strftime(buffer, buffer_size, "%Y-%m-%d %H:%M:%S", &time_info) != 0;
 }
 
 static void print_account_targeting_alert(const AccountTargetingAlert *alert, void *context) {
-    (void)context;
 
+    if (context == NULL) {
+        fprintf(stderr, "Missing timezone context!\n");
+        return;
+    }
+
+    const TimestampMode *mode = context;
     char start[64];
     char end[64];
 
-    if (!format_timestamp(alert->window_start, start, sizeof(start)) ||
-        !format_timestamp(alert->window_end, end, sizeof(end))) {
+    if (!format_timestamp(alert->window_start, *mode, start, sizeof(start)) ||
+        !format_timestamp(alert->window_end, *mode, end, sizeof(end))) {
 
         fprintf(stderr, "Failed to format alert timestamp!\n");
         return;
@@ -53,6 +106,7 @@ int main(int argc, char *argv[]) {
 
     DetectorMode mode = DETECTOR_ALL;
     LogFormat format = LOG_FORMAT_SIMPLE;
+    TimestampMode timezone_mode = TIMESTAMP_LOCAL;
 
     bool file_provided = false;
     bool format_provided = false;
@@ -148,6 +202,22 @@ int main(int argc, char *argv[]) {
 
             year = (int)parsed_year;
             year_provided = true;
+        } else if (strcmp(argv[i], "--timezone") == 0) {
+
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Missing timezone value!\n");
+                return EXIT_FAILURE;
+            }
+            char *selected = argv[++i];
+
+            if (strcasecmp(selected, "local") == 0) {
+                timezone_mode = TIMESTAMP_LOCAL;
+            } else if (strcasecmp(selected, "utc") == 0) {
+                timezone_mode = TIMESTAMP_UTC;
+            } else {
+                fprintf(stderr, "Error! Invalid argument!\n");
+                return EXIT_FAILURE;
+            }
         } else {
             fprintf(stderr, "Unknown argument: %s\n", argv[i]);
             return EXIT_FAILURE;
@@ -173,6 +243,8 @@ int main(int argc, char *argv[]) {
     IpTable *table = NULL;
     FILE *file = NULL;
     char *line = NULL;
+
+    ParseIssue issue = PARSE_ISSUE_NONE;
 
     size_t capacity = 0;
     ssize_t bytes_read;
@@ -205,14 +277,24 @@ int main(int argc, char *argv[]) {
         line_number++;
 
         if (format == LOG_FORMAT_SIMPLE) {
-            if (!log_store_parse_simple_line(store, table, line)) {
-                fprintf(stderr, "Warning: Invalid simple log at line %zu\n", line_number);
+
+            if (!log_store_parse_simple_line(store, table, line, timezone_mode, &issue)) {
+                if (issue == PARSE_ISSUE_STORAGE_FAILURE){
+                    fprintf(stderr, "Fatal: Storage failure at line %zu\n", line_number);
+                    goto cleanup;
+                }
+                fprintf(stderr, "Warning: Line %zu: %s\n", line_number, parse_issue_message(issue));
             }
         } else {
-            ParseStatus status = log_store_parse_ssh_line(store, table, line, year);
+            ParseStatus status = log_store_parse_ssh_line(store, table, line, year, timezone_mode, &issue);
 
             if (status == PARSE_ERROR) {
-                fprintf(stderr, "Warning: Invalid SSH log at line %zu\n", line_number);
+
+                if (issue == PARSE_ISSUE_STORAGE_FAILURE){
+                    fprintf(stderr, "Fatal: Storage failure at line %zu\n", line_number);
+                    goto cleanup;
+                }
+                fprintf(stderr, "Warning! Line %zu: %s\n", line_number, parse_issue_message(issue));
             }
         }
     }
@@ -249,7 +331,7 @@ int main(int argc, char *argv[]) {
         printf("\n========== MULTI-ACCOUNT TARGETING ==========\n");
 
         if (!detector_find_account_targeting_in_store(store, threshold, window_seconds,
-                                                      print_account_targeting_alert, NULL,
+                                                      print_account_targeting_alert, &timezone_mode,
                                                       &alerts_found)) {
             fprintf(stderr, "Failed to detect account targeting!\n");
             goto cleanup;

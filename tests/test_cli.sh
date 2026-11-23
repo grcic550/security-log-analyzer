@@ -245,3 +245,63 @@ if ./build/loganalyzer --file examples/ssh_mixed.log --format ssh --year > /dev/
 else
     echo "PASS: Year without value rejected"
 fi
+
+if ./build/loganalyzer --timezone utc > /dev/null 2>&1; then
+    echo "PASS: UTC zone accepted"
+else
+    echo "FAIL: UTC zone rejected"
+    exit 1
+fi
+
+if ./build/loganalyzer --timezone local > /dev/null 2>&1; then
+    echo "PASS: LOCAL zone accepted"
+else
+    echo "FAIL: LOCAL zone rejected"
+    exit 1
+fi
+
+if ./build/loganalyzer --timezone mars > /dev/null 2>&1; then
+    echo "FAIL: Invalid timezone accepted"
+    exit 1
+else
+    echo "PASS: Invalid timezone rejected"
+fi
+
+if ./build/loganalyzer --timezone > /dev/null 2>&1; then
+    echo "FAIL: Empty timezone rejected"
+    exit 1
+else
+    echo "PASS: Empty timezone rejected"
+fi
+
+output8=$(./build/loganalyzer --file examples/ssh_mixed.log --detector account-targeting --format ssh --year 2026 --timezone utc)
+
+if printf "%s\n" "$output8" | grep -Fq "Total account-targeting alerts: 1"; then
+    echo "PASS: Account-targeting detection"
+else
+    echo "FAIL: Account-targeting detection"
+    exit 1
+fi
+
+if ./build/loganalyzer --file examples/ssh_mixed.log --detector invalid --format ssh --year 2026 --timezone utc > /dev/null 2>&1; then
+    echo "FAIL: Invalid detector input accepted"
+    exit 1
+else
+    echo "PASS: Invalid detector input rejected"
+fi
+
+if ./build/loganalyzer --file examples/ssh_mixed.log --detector  --format ssh --year 2026 --timezone utc > /dev/null 2>&1; then
+    echo "FAIL: Missing detector input accepted"
+    exit 1
+else
+    echo "PASS: Missing detector input rejected"
+fi
+
+err=$(./build/loganalyzer --file examples/ssh_mixed.log --format ssh --year 2026 --timezone utc 2>&1 > /dev/null)
+
+if printf "%s\n" "$err" | grep -Fq "Warning! Line 4: Malformed SSH line!"; then
+    echo "PASS: stderr output for malformed line 4 pass"
+else
+    echo "FAIL: stderr output for malformed line 4 fail"
+    exit 1
+fi

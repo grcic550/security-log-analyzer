@@ -26,6 +26,12 @@ CLI_UTILS_TEST_TARGET = build/test_cli_utils
 
 CLI_UTILS_TEST_SOURCES = tests/test_cli_utils.c src/cli_utils.c
 
+ALLOC_TEST_TARGET = build/test_allocation_failures
+
+ALLOC_TEST_SOURCES = tests/test_allocation_failures.c src/entries.c src/ip_table.c
+
+ALLOC_BUILD_RULE = $(CFLAGS) -Wl,--wrap=malloc -Wl,--wrap=realloc
+
 all:$(TARGET)
 
 $(TARGET):$(SOURCES) $(HEADERS)
@@ -48,14 +54,19 @@ $(CLI_UTILS_TEST_TARGET): $(CLI_UTILS_TEST_SOURCES) include/cli_utils.h
 	mkdir -p build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(CLI_UTILS_TEST_SOURCES) -o $(CLI_UTILS_TEST_TARGET)
 
-test: $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET)
+$(ALLOC_TEST_TARGET): $(ALLOC_TEST_SOURCES) include/entries.h include/ip_table.h
+	mkdir -p build
+	$(CC) $(CPPFLAGS) $(ALLOC_BUILD_RULE) $(ALLOC_TEST_SOURCES) -o $(ALLOC_TEST_TARGET)
+
+test: $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET) $(ALLOC_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(DETECTOR_TEST_TARGET)
 	./$(ENTRIES_TEST_TARGET)
 	./$(CLI_UTILS_TEST_TARGET)
+	./$(ALLOC_TEST_TARGET)
 	bash tests/test_cli.sh
 
 .PHONY: all clean test
 
 clean:
-	rm -f $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET)
+	rm -f $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET) $(ALLOC_TEST_TARGET)

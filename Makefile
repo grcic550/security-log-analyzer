@@ -4,9 +4,9 @@ CFLAGS = -std=c99 -Wall -Wextra -Wconversion -pedantic -g -fsanitize=address,und
 
 CPPFLAGS = -Iinclude
 
-SOURCES = src/main.c src/entries.c src/ip_table.c src/detector.c src/cli_utils.c 
+SOURCES = src/main.c src/entries.c src/ip_table.c src/detector.c src/cli_utils.c src/ip_heap.c
 
-HEADERS = include/entries.h include/ip_table.h include/detector.h include/cli_utils.h 
+HEADERS = include/entries.h include/ip_table.h include/detector.h include/cli_utils.h include/ip_heap.h 
 
 TARGET = build/loganalyzer
 
@@ -42,6 +42,14 @@ BENCH_SOURCES = tests/bench_ip_tables.c src/ip_table.c src/ip_table_oa.c
 
 BENCH_CFLAGS = -std=c99 -Wall -Wextra -Wconversion -pedantic -O2
 
+HEAP_TARGET = build/test_ip_heap
+
+HEAP_SOURCES = tests/test_ip_heap.c src/ip_heap.c src/ip_table.c
+
+BENCH_TOP_K_TARGET = build/bench_top_k
+
+BENCH_TOP_K_SOURCES = tests/bench_top_k.c src/ip_table.c src/ip_heap.c
+
 all:$(TARGET)
 
 $(TARGET):$(SOURCES) $(HEADERS)
@@ -76,19 +84,29 @@ $(BENCH_TARGET): $(BENCH_SOURCES) include/ip_table.h include/ip_table_oa.h
 	mkdir -p build
 	$(CC) $(CPPFLAGS) $(BENCH_CFLAGS) $(BENCH_SOURCES) -o $(BENCH_TARGET)
 
-test: $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET) $(ALLOC_TEST_TARGET) $(OA_TEST_TARGET)
+$(HEAP_TARGET): $(HEAP_SOURCES) include/ip_heap.h include/ip_table.h
+	mkdir -p build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(HEAP_SOURCES) -o $(HEAP_TARGET)
+
+$(BENCH_TOP_K_TARGET): $(BENCH_TOP_K_SOURCES) include/ip_heap.h include/ip_table.h
+	mkdir -p build
+	$(CC) $(CPPFLAGS) $(BENCH_CFLAGS) $(BENCH_TOP_K_SOURCES) -o $(BENCH_TOP_K_TARGET)
+
+test: $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET) $(ALLOC_TEST_TARGET) $(OA_TEST_TARGET) $(HEAP_TARGET)
 	./$(TEST_TARGET)
 	./$(DETECTOR_TEST_TARGET)
 	./$(ENTRIES_TEST_TARGET)
 	./$(CLI_UTILS_TEST_TARGET)
 	./$(ALLOC_TEST_TARGET)
 	./$(OA_TEST_TARGET)
+	./$(HEAP_TARGET)
 	bash tests/test_cli.sh
 
-bench: $(BENCH_TARGET)
+bench: $(BENCH_TARGET) $(BENCH_TOP_K_TARGET)
 	./$(BENCH_TARGET)
+	./$(BENCH_TOP_K_TARGET)
 
 .PHONY: all clean test bench
 
 clean:
-	rm -f $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET) $(ALLOC_TEST_TARGET) $(OA_TEST_TARGET) $(BENCH_TARGET)
+	rm -f $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET) $(ALLOC_TEST_TARGET) $(OA_TEST_TARGET) $(BENCH_TARGET) $(HEAP_TARGET) $(BENCH_TOP_K_TARGET)

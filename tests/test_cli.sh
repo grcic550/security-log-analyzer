@@ -304,3 +304,47 @@ else
     echo "FAIL: stderr output for malformed line 4 fail"
     exit 1
 fi
+
+top_output=$(./build/loganalyzer --file examples/sample.log --format simple --top 1)
+
+if printf "%s\n" "$top_output" | grep -Fq "1. IP ADDRESS: 192.168.1.20 -> Failed attempts: 3"; then
+    echo "PASS: top 1 address pass"
+else
+    echo "FAIL: top 1 address failed"
+    exit 1
+fi
+
+if printf "%s\n" "$top_output" | grep -Fq "192.168.1.40"; then
+    echo "FAIL: Wrong address at the top"
+    exit 1
+else
+    echo "PASS: Correct address at the top"
+fi
+
+if ./build/loganalyzer --file examples/sample.log --format simple --top 0 > /dev/null 2>&1; then
+    echo "FAIL: Top with value 0 accepted"
+    exit 1
+else
+    echo "PASS: Top with value 0 rejected"
+fi
+
+if ./build/loganalyzer --file examples/sample.log --format simple --top -3 > /dev/null 2>&1; then
+    echo "FAIL: Negative top value accepted"
+    exit 1
+else
+    echo "PASS: Negative top value rejected"
+fi
+
+if ./build/loganalyzer --file examples/sample.log --format simple --top abc > /dev/null 2>&1; then
+    echo "FAIL: Non-numerical top value accepted"
+    exit 1
+else
+    echo "PASS: Non-numerical top value rejected"
+fi
+
+if ./build/loganalyzer --file examples/sample.log --format simple --top > /dev/null 2>&1; then
+    echo "FAIL: Missing top value accepted"
+    exit 1
+else
+    echo "PASS: Missing top value rejected"
+fi

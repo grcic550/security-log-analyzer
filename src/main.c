@@ -13,6 +13,7 @@
 #include "detector.h"
 #include "entries.h"
 #include "ip_table.h"
+#include "ip_heap.h"
 
 static const char *parse_issue_message(ParseIssue issue) {
 
@@ -37,10 +38,10 @@ static const char *parse_issue_message(ParseIssue issue) {
 
     case PARSE_ISSUE_STORAGE_FAILURE:
         return "Storage failure!";
-    
+
     case PARSE_ISSUE_MALFORMED_SSH:
         return "Malformed SSH line!";
-    
+
     case PARSE_ISSUE_INVALID_PORT:
         return "Invalid port!";
 
@@ -103,6 +104,7 @@ int main(int argc, char *argv[]) {
     size_t threshold = 3;
     double window_seconds = 60.0;
     int year = 2026;
+    size_t top_k = 0;
 
     DetectorMode mode = DETECTOR_ALL;
     LogFormat format = LOG_FORMAT_SIMPLE;
@@ -111,6 +113,7 @@ int main(int argc, char *argv[]) {
     bool file_provided = false;
     bool format_provided = false;
     bool year_provided = false;
+    bool top_provided = false;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--file") == 0) {
@@ -218,6 +221,22 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Error! Invalid argument!\n");
                 return EXIT_FAILURE;
             }
+        } else if (strcmp(argv[i], "--top") == 0){
+
+            if (i + 1 >= argc){
+                fprintf(stderr, "Missing top value!\n");
+                return EXIT_FAILURE;
+            }
+
+            size_t parsed_top;
+
+            if (!parse_positive_size(argv[++i], &parsed_top)){
+                fprintf(stderr, "Failed to parse --top value!\n");
+                return EXIT_FAILURE;
+            }
+
+            top_k = parsed_top;
+            top_provided = true;
         } else {
             fprintf(stderr, "Unknown argument: %s\n", argv[i]);
             return EXIT_FAILURE;
@@ -241,6 +260,7 @@ int main(int argc, char *argv[]) {
 
     LogStore *store = NULL;
     IpTable *table = NULL;
+    IpRankEntry *top_entries = NULL;
     FILE *file = NULL;
     char *line = NULL;
 
@@ -279,18 +299,19 @@ int main(int argc, char *argv[]) {
         if (format == LOG_FORMAT_SIMPLE) {
 
             if (!log_store_parse_simple_line(store, table, line, timezone_mode, &issue)) {
-                if (issue == PARSE_ISSUE_STORAGE_FAILURE){
+                if (issue == PARSE_ISSUE_STORAGE_FAILURE) {
                     fprintf(stderr, "Fatal: Storage failure at line %zu\n", line_number);
                     goto cleanup;
                 }
                 fprintf(stderr, "Warning: Line %zu: %s\n", line_number, parse_issue_message(issue));
             }
         } else {
-            ParseStatus status = log_store_parse_ssh_line(store, table, line, year, timezone_mode, &issue);
+            ParseStatus status =
+                log_store_parse_ssh_line(store, table, line, year, timezone_mode, &issue);
 
             if (status == PARSE_ERROR) {
 
-                if (issue == PARSE_ISSUE_STORAGE_FAILURE){
+                if (issue == PARSE_ISSUE_STORAGE_FAILURE) {
                     fprintf(stderr, "Fatal: Storage failure at line %zu\n", line_number);
                     goto cleanup;
                 }
@@ -312,8 +333,46 @@ int main(int argc, char *argv[]) {
 
     if (mode == DETECTOR_COUNT || mode == DETECTOR_ALL) {
 
-        printf("\n");
-        ip_table_print_report(table);
+        if (top_provided){
+
+            top_entries = malloc(top_k * sizeof(*top_entries));
+            size_t top_count = 0;
+
+            if (top_entries == NULL){
+                fprintf(stderr, "Failed to allocate memory for top entries!\n");
+                goto cleanup;
+            }
+
+            if (!ip_heap_top_k_from_table(
+                table,
+                top_k,
+                top_entries,
+                &top_count
+            )){
+                fprintf(stderr, "Failed to find top k from table!\n");
+                goto cleanup;
+            }
+
+            printf("\n");
+            printf("========== TOP %zu IP ADDRESSES BY FAILED LOGINS ==========\n", top_k);
+            
+            if (top_count == 0){
+                printf("No logins found!\n");
+
+            } else {
+                for (size_t i = 0; i < top_count; i++){
+                    printf("%zu. IP ADDRESS: %s -> Failed attempts: %zu\n",
+                            i + 1,
+                            top_entries[i].ip_address,
+                            top_entries[i].failed_attempts
+                    );
+                }
+            }
+        } else {
+
+            printf("\n");
+            ip_table_print_report(table);
+        }
 
         size_t suspicious_count = detector_print_alerts(table, threshold);
 
@@ -344,6 +403,7 @@ int main(int argc, char *argv[]) {
 
 cleanup:
     free(line);
+    free(top_entries);
 
     if (file != NULL) {
         fclose(file);

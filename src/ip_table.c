@@ -25,7 +25,7 @@ static bool ip_table_resize(IpTable *table);
 
 IpEntry *create_ip_entry(const char *ip_address) {
 
-    if (ip_address == NULL){
+    if (ip_address == NULL) {
         return NULL;
     }
 
@@ -77,7 +77,7 @@ EntryResult add_entry(IpEntry **head, const char *ip_address) {
 
 bool ip_table_insert(IpTable *table, const char *ip_address) {
 
-    if (table == NULL || ip_address == NULL){
+    if (table == NULL || ip_address == NULL) {
         return false;
     }
 
@@ -175,7 +175,7 @@ static size_t hash_ip(const char *ip_address, size_t bucket_count) {
 
 size_t ip_table_get_count(IpTable *table, const char *ip_address) {
 
-    if (table == NULL || ip_address == NULL){
+    if (table == NULL || ip_address == NULL) {
         return 0;
     }
 
@@ -212,7 +212,7 @@ void ip_table_foreach(const IpTable *table, IpCallback callback, void *context) 
 
 void ip_table_print_report(IpTable *table) {
 
-    if (table == NULL){
+    if (table == NULL) {
         return;
     }
 

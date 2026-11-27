@@ -483,7 +483,7 @@ static ParseStatus parse_ssh_fields(const char *line, int year, TimestampMode mo
         return PARSE_ERROR;
     }
 
-    if (!isspace((unsigned char)*end)){
+    if (!isspace((unsigned char)*end)) {
         set_parse_issue(issue, PARSE_ISSUE_MALFORMED_SSH);
         return PARSE_ERROR;
     }
@@ -647,7 +647,7 @@ ParseStatus log_store_parse_ssh_line(LogStore *store, IpTable *table, const char
         return PARSE_ERROR;
     }
 
-    if (year < 1900){
+    if (year < 1900) {
         set_parse_issue(issue, PARSE_ISSUE_INVALID_TIMESTAMP);
         return PARSE_ERROR;
     }

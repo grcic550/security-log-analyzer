@@ -339,8 +339,8 @@ static void test_parse_ssh_success(void) {
                                      "192.168.1.30 port 52343 ssh2\n"
                                      "UNEXPECTED DATA";
 
-    assert(log_store_parse_ssh_line(store, table, invalid_extra_line, 2026, TIMESTAMP_LOCAL, NULL) ==
-           PARSE_ERROR);
+    assert(log_store_parse_ssh_line(store, table, invalid_extra_line, 2026, TIMESTAMP_LOCAL,
+                                    NULL) == PARSE_ERROR);
     assert(log_store_get_count(store) == 1);
     assert(ip_table_get_count(table, "192.168.1.30") == 0);
     assert(log_store_count_by_event(store, AUTH_SUCCESS) == 1);
@@ -350,8 +350,8 @@ static void test_parse_ssh_success(void) {
                                        "Accepted password for ante from "
                                        "192.168.1.30 ssh2";
 
-    assert(log_store_parse_ssh_line(store, table, invalid_missing_port, 2026, TIMESTAMP_LOCAL, NULL) ==
-           PARSE_ERROR);
+    assert(log_store_parse_ssh_line(store, table, invalid_missing_port, 2026, TIMESTAMP_LOCAL,
+                                    NULL) == PARSE_ERROR);
     assert(log_store_get_count(store) == 1);
     assert(ip_table_get_count(table, "192.168.1.30") == 0);
     assert(log_store_count_by_event(store, AUTH_SUCCESS) == 1);
@@ -398,15 +398,15 @@ static void test_ssh_parse_status(void) {
     const char *connection_closed_event =
         "Nov 14 10:15:05 server1 sshd[1235]: Connection closed by 192.168.1.30 port 54322";
 
-    assert(log_store_parse_ssh_line(store, table, connection_closed_event, 2026, TIMESTAMP_LOCAL, NULL) ==
-           PARSE_IGNORED);
+    assert(log_store_parse_ssh_line(store, table, connection_closed_event, 2026, TIMESTAMP_LOCAL,
+                                    NULL) == PARSE_IGNORED);
     assert(log_store_get_count(store) == 1);
 
     const char *failed_password_event =
         "Nov 14 10:15:05 server1 sshd[1235]: Failed password for root from";
 
-    assert(log_store_parse_ssh_line(store, table, failed_password_event, 2026, TIMESTAMP_LOCAL, NULL) ==
-           PARSE_ERROR);
+    assert(log_store_parse_ssh_line(store, table, failed_password_event, 2026, TIMESTAMP_LOCAL,
+                                    NULL) == PARSE_ERROR);
     assert(log_store_get_count(store) == 1);
 
     log_store_destroy(store);
@@ -424,16 +424,19 @@ static void test_ssh_parse_with_year_and_time_normalization(void) {
     const char *normal_line = "Nov 14 10:15:00 server1 sshd[1234]: Failed password for root from "
                               "192.168.1.20 port 54321 ssh2";
 
-    assert(log_store_parse_ssh_line(store, table, normal_line, 2025, TIMESTAMP_LOCAL, NULL) == PARSE_OK);
+    assert(log_store_parse_ssh_line(store, table, normal_line, 2025, TIMESTAMP_LOCAL, NULL) ==
+           PARSE_OK);
     assert(log_store_get_count(store) == 1);
 
     const char *leap_year = "Feb 29 10:15:00 server1 sshd[1234]: Failed password for root from "
                             "192.168.1.20 port 54321 ssh2";
 
-    assert(log_store_parse_ssh_line(store, table, leap_year, 2024, TIMESTAMP_LOCAL, NULL) == PARSE_OK);
+    assert(log_store_parse_ssh_line(store, table, leap_year, 2024, TIMESTAMP_LOCAL, NULL) ==
+           PARSE_OK);
     assert(log_store_get_count(store) == 2);
 
-    assert(log_store_parse_ssh_line(store, table, leap_year, 2025, TIMESTAMP_LOCAL, NULL) == PARSE_ERROR);
+    assert(log_store_parse_ssh_line(store, table, leap_year, 2025, TIMESTAMP_LOCAL, NULL) ==
+           PARSE_ERROR);
     assert(log_store_get_count(store) == 2);
 
     const char *invalid_date = "Feb 30 10:15:00 server1 sshd[1234]: Failed password for root from "
@@ -455,7 +458,8 @@ static void test_ssh_parse_with_year_and_time_normalization(void) {
              "192.168.1.20 port 52341 ssh2",
              hostname);
 
-    assert(log_store_parse_ssh_line(store, table, line, 2026, TIMESTAMP_LOCAL, NULL) == PARSE_ERROR);
+    assert(log_store_parse_ssh_line(store, table, line, 2026, TIMESTAMP_LOCAL, NULL) ==
+           PARSE_ERROR);
     assert(log_store_get_count(store) == 2);
 
     log_store_destroy(store);
@@ -655,10 +659,9 @@ static void test_error_response_description(void) {
 
     issue = PARSE_ISSUE_INVALID_PORT;
 
-    const char *publickey_login = 
-        "Nov 14 10:15:00 server1 sshd[1234]: "
-        "Accepted publickey for ante from "
-        "192.168.1.30 port 52342 ssh2";
+    const char *publickey_login = "Nov 14 10:15:00 server1 sshd[1234]: "
+                                  "Accepted publickey for ante from "
+                                  "192.168.1.30 port 52342 ssh2";
 
     status = log_store_parse_ssh_line(store, table, publickey_login, 2026, TIMESTAMP_UTC, &issue);
 
@@ -669,18 +672,11 @@ static void test_error_response_description(void) {
 
     issue = PARSE_ISSUE_NONE;
 
-    const char *invalid_date = 
-        "INVALID server1 sshd[1234]: "
-        "Failed password for root from 192.168.1.20 port 52341 ssh2";
+    const char *invalid_date = "INVALID server1 sshd[1234]: "
+                               "Failed password for root from 192.168.1.20 port 52341 ssh2";
 
-    assert(log_store_parse_ssh_line(
-        store,
-        table,
-        invalid_date,
-        2026,
-        TIMESTAMP_UTC,
-        &issue
-    ) == PARSE_ERROR);
+    assert(log_store_parse_ssh_line(store, table, invalid_date, 2026, TIMESTAMP_UTC, &issue) ==
+           PARSE_ERROR);
 
     assert(issue == PARSE_ISSUE_INVALID_TIMESTAMP);
 
@@ -688,14 +684,8 @@ static void test_error_response_description(void) {
 
     const char *missing_hostname = "Nov 14 10:15:00";
 
-    assert(log_store_parse_ssh_line(
-        store,
-        table,
-        missing_hostname,
-        2026,
-        TIMESTAMP_UTC,
-        &issue
-    ) == PARSE_ERROR);
+    assert(log_store_parse_ssh_line(store, table, missing_hostname, 2026, TIMESTAMP_UTC, &issue) ==
+           PARSE_ERROR);
 
     assert(issue == PARSE_ISSUE_MALFORMED_SSH);
 

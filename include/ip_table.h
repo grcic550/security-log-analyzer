@@ -8,6 +8,7 @@ typedef struct IpEntry IpEntry;
 typedef struct IpTable IpTable;
 typedef void (*IpCallback)(const char *ip_address, size_t failed_attempts, void *context);
 
+
 IpEntry *create_ip_entry(const char *ip_address);
 bool ip_table_insert(IpTable *table, const char *ip_address);
 IpTable *ip_table_create(size_t initial_bucket_count);

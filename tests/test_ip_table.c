@@ -104,7 +104,7 @@ int main(void) {
     test_duplicate_insertion();
     test_insertion();
 
-    printf("All tests passed!\n");
+    printf("All tests passed!\n\n");
 
     return 0;
 }

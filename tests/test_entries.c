@@ -721,7 +721,7 @@ int main(void) {
     test_utc_timezone_parsing();
     test_error_response_description();
 
-    printf("\nAll entries test pass!!\n");
+    printf("All entries test pass!!\n\n");
 
     return 0;
 }

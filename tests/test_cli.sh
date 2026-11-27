@@ -2,7 +2,6 @@
 
 set -eu
 
-printf '\n'
 echo "Running CLI tests..."
 
 if ./build/loganalyzer --threshold 3 > /dev/null 2>&1; then

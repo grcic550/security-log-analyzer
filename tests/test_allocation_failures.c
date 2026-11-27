@@ -183,6 +183,6 @@ int main(void){
 
     test_store_realloc_failure();
 
-    puts("Allocation failure tests passed!");
+    puts("Allocation failure tests passed!\n\n");
     return 0;
 }

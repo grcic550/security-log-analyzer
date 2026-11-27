@@ -81,6 +81,6 @@ int main(void) {
     test_positive_size();
     test_positive_double();
 
-    printf("\nAll CLI tests pass!!\n");
+    printf("All CLI tests pass!!\n\n");
     return 0;
 }

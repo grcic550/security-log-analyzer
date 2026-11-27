@@ -645,7 +645,7 @@ int main(void) {
     test_detector_find_account_targeting_in_store();
     test_detector_analyze_windows_in_store();
 
-    printf("\nAll test passed!\n");
+    printf("All test passed!\n\n");
 
     return 0;
 }

@@ -4,9 +4,9 @@ CFLAGS = -std=c99 -Wall -Wextra -Wconversion -pedantic -g -fsanitize=address,und
 
 CPPFLAGS = -Iinclude
 
-SOURCES = src/main.c src/entries.c src/ip_table.c src/detector.c src/cli_utils.c
+SOURCES = src/main.c src/entries.c src/ip_table.c src/detector.c src/cli_utils.c 
 
-HEADERS = include/entries.h include/ip_table.h include/detector.h include/cli_utils.h
+HEADERS = include/entries.h include/ip_table.h include/detector.h include/cli_utils.h 
 
 TARGET = build/loganalyzer
 
@@ -31,6 +31,16 @@ ALLOC_TEST_TARGET = build/test_allocation_failures
 ALLOC_TEST_SOURCES = tests/test_allocation_failures.c src/entries.c src/ip_table.c
 
 ALLOC_BUILD_RULE = $(CFLAGS) -Wl,--wrap=malloc -Wl,--wrap=realloc
+
+OA_TEST_TARGET = build/test_ip_table_oa
+
+OA_TEST_SOURCES = tests/test_ip_table_oa.c src/ip_table_oa.c
+
+BENCH_TARGET = build/bench_ip_tables
+
+BENCH_SOURCES = tests/bench_ip_tables.c src/ip_table.c src/ip_table_oa.c
+
+BENCH_CFLAGS = -std=c99 -Wall -Wextra -Wconversion -pedantic -O2
 
 all:$(TARGET)
 
@@ -58,15 +68,27 @@ $(ALLOC_TEST_TARGET): $(ALLOC_TEST_SOURCES) include/entries.h include/ip_table.h
 	mkdir -p build
 	$(CC) $(CPPFLAGS) $(ALLOC_BUILD_RULE) $(ALLOC_TEST_SOURCES) -o $(ALLOC_TEST_TARGET)
 
-test: $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET) $(ALLOC_TEST_TARGET)
+$(OA_TEST_TARGET): $(OA_TEST_SOURCES) include/ip_table_oa.h
+	mkdir -p build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(OA_TEST_SOURCES) -o $(OA_TEST_TARGET)
+
+$(BENCH_TARGET): $(BENCH_SOURCES) include/ip_table.h include/ip_table_oa.h
+	mkdir -p build
+	$(CC) $(CPPFLAGS) $(BENCH_CFLAGS) $(BENCH_SOURCES) -o $(BENCH_TARGET)
+
+test: $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET) $(ALLOC_TEST_TARGET) $(OA_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(DETECTOR_TEST_TARGET)
 	./$(ENTRIES_TEST_TARGET)
 	./$(CLI_UTILS_TEST_TARGET)
 	./$(ALLOC_TEST_TARGET)
+	./$(OA_TEST_TARGET)
 	bash tests/test_cli.sh
 
-.PHONY: all clean test
+bench: $(BENCH_TARGET)
+	./$(BENCH_TARGET)
+
+.PHONY: all clean test bench
 
 clean:
-	rm -f $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET) $(ALLOC_TEST_TARGET)
+	rm -f $(TARGET) $(TEST_TARGET) $(DETECTOR_TEST_TARGET) $(ENTRIES_TEST_TARGET) $(CLI_UTILS_TEST_TARGET) $(ALLOC_TEST_TARGET) $(OA_TEST_TARGET) $(BENCH_TARGET)

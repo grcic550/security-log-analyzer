@@ -348,3 +348,12 @@ if ./build/loganalyzer --file examples/sample.log --format simple --top > /dev/n
 else
     echo "PASS: Missing top value rejected"
 fi
+
+big_top=$(./build/loganalyzer --file examples/sample.log --format simple --top 1152921504606846977)
+
+if printf "%s\n" "$big_top" | grep -Fq "1. IP ADDRESS: 192.168.1.20 -> Failed attempts: 3"; then
+    echo "PASS: Big top outputs cleanly"
+else
+    echo "FAIL: Big top doesnt output cleanly"
+    exit 1
+fi

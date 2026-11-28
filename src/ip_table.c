@@ -23,6 +23,15 @@ static EntryResult add_entry(IpEntry **head, const char *ip_address);
 static size_t hash_ip(const char *ip_address, size_t bucket_count);
 static bool ip_table_resize(IpTable *table);
 
+size_t ip_table_size(const IpTable *table){
+
+    if (table == NULL){
+        return 0;
+    }
+
+    return table->entry_count;
+}
+
 IpEntry *create_ip_entry(const char *ip_address) {
 
     if (ip_address == NULL) {

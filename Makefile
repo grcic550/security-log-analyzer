@@ -1,6 +1,6 @@
 CC = gcc
 
-CFLAGS = -std=c99 -Wall -Wextra -Wconversion -pedantic -g -fsanitize=address,undefined
+CFLAGS = -std=c99 -Wall -Wextra -Wconversion -Wshadow -pedantic -g -fsanitize=address,undefined
 
 CPPFLAGS = -Iinclude
 
@@ -60,7 +60,7 @@ $(TEST_TARGET):$(TEST_SOURCES) include/ip_table.h
 	mkdir -p build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(TEST_SOURCES) -o $(TEST_TARGET)
 
-$(DETECTOR_TEST_TARGET): $(DETECTOR_TEST_SOURCES) include/detector.h
+$(DETECTOR_TEST_TARGET): $(DETECTOR_TEST_SOURCES) include/detector.h include/entries.h include/ip_table.h
 	mkdir -p build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DETECTOR_TEST_SOURCES) -o $(DETECTOR_TEST_TARGET)
 

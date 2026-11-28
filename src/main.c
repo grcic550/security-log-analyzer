@@ -267,7 +267,6 @@ int main(int argc, char *argv[]) {
     ParseIssue issue = PARSE_ISSUE_NONE;
 
     size_t capacity = 0;
-    ssize_t bytes_read;
     size_t line_number = 0;
 
     int result = EXIT_FAILURE;
@@ -293,7 +292,7 @@ int main(int argc, char *argv[]) {
         goto cleanup;
     }
 
-    while ((bytes_read = getline(&line, &capacity, file)) != -1) {
+    while ((getline(&line, &capacity, file)) != -1) {
         line_number++;
 
         if (format == LOG_FORMAT_SIMPLE) {
@@ -335,24 +334,35 @@ int main(int argc, char *argv[]) {
 
         if (top_provided){
 
-            top_entries = malloc(top_k * sizeof(*top_entries));
+            size_t table_size = ip_table_size(table);
+            size_t effective_k = (top_k < table_size) ? top_k : table_size;
             size_t top_count = 0;
+            
+            if (effective_k > 0){
 
-            if (top_entries == NULL){
-                fprintf(stderr, "Failed to allocate memory for top entries!\n");
-                goto cleanup;
+                if (effective_k > SIZE_MAX / sizeof(*top_entries)){
+                    fprintf(stderr, "Too big of a K!\n");
+                    goto cleanup;
+                }
+
+                top_entries = malloc(effective_k * sizeof(*top_entries));
+
+                if (top_entries == NULL){
+                    fprintf(stderr, "Failed to allocate memory for top entries!\n");
+                    goto cleanup;
+                }
+
+                if (!ip_heap_top_k_from_table(
+                    table,
+                    effective_k,
+                    top_entries,
+                    &top_count
+                )){
+                    fprintf(stderr, "Failed to find top k from table!\n");
+                    goto cleanup;
+                }
             }
-
-            if (!ip_heap_top_k_from_table(
-                table,
-                top_k,
-                top_entries,
-                &top_count
-            )){
-                fprintf(stderr, "Failed to find top k from table!\n");
-                goto cleanup;
-            }
-
+            
             printf("\n");
             printf("========== TOP %zu IP ADDRESSES BY FAILED LOGINS ==========\n", top_k);
             
@@ -369,7 +379,6 @@ int main(int argc, char *argv[]) {
                 }
             }
         } else {
-
             printf("\n");
             ip_table_print_report(table);
         }

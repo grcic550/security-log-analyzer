@@ -16,6 +16,7 @@ void ip_table_destroy(IpTable *table);
 size_t ip_table_get_count(IpTable *table, const char *ip_address);
 void ip_table_print_report(IpTable *table);
 
+size_t ip_table_size(const IpTable *table);
 void ip_table_foreach(const IpTable *table, IpCallback callback, void *context);
 
 #endif

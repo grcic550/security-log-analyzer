@@ -10,6 +10,5 @@
 *.log
 
 #Allow synthetic example data
-!/examples/sample.log
-!/examples/window_test.log
+!/examples/*.log
 

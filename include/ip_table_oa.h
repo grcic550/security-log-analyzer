@@ -15,6 +15,6 @@ size_t ip_table_oa_capacity(const IpTableOA *table);
 bool ip_table_oa_remove(IpTableOA *table, const char *ip_address);
 void ip_table_oa_foreach(const IpTableOA *table, IpOACallback callback, void *context);
 void ip_table_oa_destroy(IpTableOA *table);
-size_t ip_table_oa_max_psl(IpTableOA *table);
+size_t ip_table_oa_max_psl(const IpTableOA *table);
 
 #endif

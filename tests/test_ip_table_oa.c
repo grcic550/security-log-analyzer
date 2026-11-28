@@ -1,8 +1,15 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 #include "ip_table_oa.h"
+
+typedef struct {
+    size_t visited;
+    size_t sum_failed_attempts;
+} OATestContext;
 
 static void test_open_addressing_table(void) {
 
@@ -158,12 +165,184 @@ static void test_oa_robin_hood(void) {
     ip_table_oa_destroy(table);
 }
 
+static void test_oa_no_bloat_on_churn(void){
+
+    IpTableOA *table = ip_table_oa_create(8);
+    assert(table != NULL);
+
+    for (size_t i = 0; i < 200; i++){
+        assert(ip_table_oa_insert(
+            table,
+            "10.0.0.1" 
+        ));
+        assert(ip_table_oa_remove(
+            table,
+            "10.0.0.1"
+        ));
+    }
+
+    assert(ip_table_oa_size(table) == 0);
+    assert(ip_table_oa_capacity(table) == 8);
+
+    ip_table_oa_destroy(table);
+}
+
+static void test_oa_update_does_not_resize(void){
+
+    IpTableOA *table = ip_table_oa_create(8);
+    assert(table != NULL);
+
+    assert(ip_table_oa_insert(
+        table,
+        "10.0.0.1"
+    ));
+    assert(ip_table_oa_insert(
+        table,
+        "10.0.0.2"
+    ));
+    assert(ip_table_oa_insert(
+        table,
+        "10.0.0.3"
+    ));
+    assert(ip_table_oa_insert(
+        table,
+        "10.0.0.4"
+    ));
+    assert(ip_table_oa_insert(
+        table,
+        "10.0.0.5"
+    ));
+
+    assert(ip_table_oa_capacity(table) == 8);
+
+    for (size_t i = 0; i < 20; i++){
+        assert(ip_table_oa_insert(
+        table,
+        "10.0.0.1"
+        ));
+        assert(ip_table_oa_insert(
+            table,
+            "10.0.0.2"
+        ));
+        assert(ip_table_oa_insert(
+            table,
+            "10.0.0.3"
+        ));
+        assert(ip_table_oa_insert(
+            table,
+            "10.0.0.4"
+        ));
+        assert(ip_table_oa_insert(
+            table,
+            "10.0.0.5"
+        ));
+    }
+
+    assert(ip_table_oa_capacity(table) == 8);
+    assert(ip_table_oa_get_count(
+        table, "10.0.0.1"
+    ) == 21);
+
+    ip_table_oa_destroy(table);
+}
+
+static void verify_visited(
+    const char *ip_address,
+    size_t failed_attempts,
+    void *context
+){
+
+    OATestContext *test = context;
+
+    (void)ip_address;
+
+    test->visited++;
+    test->sum_failed_attempts += failed_attempts;
+}
+
+static void test_table_oa_randomized_differential(void){
+
+    char ip_strings[64][16] = {{0}};
+
+    for (size_t i = 0; i < 64; i++){
+
+        snprintf(ip_strings[i], sizeof(ip_strings[i]), "10.0.0.%zu", i);
+    }
+
+    size_t expected[64] = {0};
+    size_t expected_live_count = 0;
+    size_t sum_expected = 0;
+    
+    IpTableOA *table = ip_table_oa_create(4);
+    assert(table != NULL);
+
+    srand(12345);
+
+    for (size_t i = 0; i < 5000; i++){
+        size_t id = (size_t)(rand() % 64);
+
+        if (rand() % 2 == 0){
+            assert(ip_table_oa_insert(
+                table,
+                ip_strings[id]
+            ));
+
+            expected[id]++;
+        } else {
+            bool removed = ip_table_oa_remove(
+                table,
+                ip_strings[id]
+            );
+
+            assert(removed == (expected[id] > 0));
+            expected[id] = 0;
+        }
+
+        if (i % 50 == 49){
+            expected_live_count = 0;
+            sum_expected = 0;
+
+            for (size_t j = 0; j < 64; j++){
+            
+                assert(ip_table_oa_get_count(
+                    table,
+                    ip_strings[j]
+                ) == expected[j]);
+                
+                if (expected[j] != 0){
+                    expected_live_count++;
+                }
+
+                sum_expected += expected[j];
+            }
+
+            assert(ip_table_oa_size(table) == expected_live_count);
+        }
+    }
+
+    OATestContext context = {0};
+
+    ip_table_oa_foreach(
+        table,
+        verify_visited,
+        &context
+    );
+
+    assert(context.visited == expected_live_count);
+    assert(context.sum_failed_attempts == sum_expected);
+
+    ip_table_oa_destroy(table);
+}
+
 int main(void) {
 
     test_open_addressing_table();
     test_oa_resizing();
     test_oa_deletion();
     test_oa_robin_hood();
+    test_oa_no_bloat_on_churn();
+    test_oa_update_does_not_resize();
+    test_table_oa_randomized_differential();
 
     printf("All tests pass!!\n\n");
 

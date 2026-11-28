@@ -7,7 +7,7 @@
 
 #include "ip_table_oa.h"
 
-typedef enum { SLOT_EMPTY = 0, SLOT_OCCUPIED, SLOT_DELETED } SlotState;
+typedef enum { SLOT_EMPTY = 0, SLOT_OCCUPIED} SlotState;
 
 typedef struct {
     SlotState state;
@@ -20,7 +20,6 @@ struct IpTableOA {
     IpSlot *slots;
     size_t capacity;
     size_t count;
-    size_t tombstone_count;
 };
 
 static size_t next_power_of_two(size_t min_capacity) {
@@ -59,7 +58,7 @@ static size_t hash_ip(const char *ip_address) {
     return (size_t)h;
 }
 
-static bool insert_slot_robin_hood(IpSlot *slots, size_t capacity, IpSlot incoming) {
+static void insert_slot_robin_hood(IpSlot *slots, size_t capacity, IpSlot incoming) {
 
     size_t idx = hash_ip(incoming.ip_address) & (capacity - 1);
 
@@ -70,13 +69,7 @@ static bool insert_slot_robin_hood(IpSlot *slots, size_t capacity, IpSlot incomi
         if (slots[idx].state == SLOT_EMPTY) {
             slots[idx] = incoming;
 
-            return false;
-        }
-
-        if (slots[idx].state == SLOT_DELETED) {
-            slots[idx] = incoming;
-
-            return true;
+            return;
         }
 
         if (incoming.psl > slots[idx].psl) {
@@ -115,7 +108,6 @@ static bool ip_table_oa_resize(IpTableOA *table) {
     free(table->slots);
     table->slots = new_slots;
     table->capacity = new_capacity;
-    table->tombstone_count = 0;
 
     return true;
 }
@@ -149,7 +141,6 @@ IpTableOA *ip_table_oa_create(size_t initial_capacity) {
 
     table->capacity = capacity;
     table->count = 0;
-    table->tombstone_count = 0;
 
     return table;
 }
@@ -158,13 +149,6 @@ bool ip_table_oa_insert(IpTableOA *table, const char *ip_address) {
 
     if (table == NULL || ip_address == NULL || ip_address[0] == '\0') {
         return false;
-    }
-
-    if ((table->count + table->tombstone_count + 1) * 10 >= table->capacity * 7) {
-        if (!ip_table_oa_resize(table)) {
-            fprintf(stderr, "Failed to resize table!\n");
-            return false;
-        }
     }
 
     size_t idx = hash_ip(ip_address) & (table->capacity - 1);
@@ -192,6 +176,13 @@ bool ip_table_oa_insert(IpTableOA *table, const char *ip_address) {
         psl++;
     }
 
+    if ((table->count + 1) * 10 >= table->capacity * 7) {
+        if (!ip_table_oa_resize(table)) {
+            fprintf(stderr, "Failed to resize table!\n");
+            return false;
+        }
+    }
+
     char *copy = malloc(strlen(ip_address) + 1);
 
     if (copy == NULL) {
@@ -203,10 +194,7 @@ bool ip_table_oa_insert(IpTableOA *table, const char *ip_address) {
 
     IpSlot incoming = {.state = SLOT_OCCUPIED, .ip_address = copy, .failed_attempts = 1, .psl = 0};
 
-    if (insert_slot_robin_hood(table->slots, table->capacity, incoming)) {
-        table->tombstone_count--;
-    }
-
+    insert_slot_robin_hood(table->slots, table->capacity, incoming);
     table->count++;
 
     return true;
@@ -229,13 +217,31 @@ bool ip_table_oa_remove(IpTableOA *table, const char *ip_address) {
             if (strcmp(table->slots[idx].ip_address, ip_address) == 0) {
 
                 free(table->slots[idx].ip_address);
-                table->slots[idx].ip_address = NULL;
-                table->slots[idx].failed_attempts = 0;
-                table->slots[idx].state = SLOT_DELETED;
-                table->slots[idx].psl = 0;
-                table->count--;
-                table->tombstone_count++;
 
+                size_t curr = idx;
+
+                while (true) {
+                
+                    size_t next = (curr + 1) & (table->capacity - 1);
+                    
+                    if (table->slots[next].state == SLOT_EMPTY ||
+                        table->slots[next].psl == 0
+                    ){
+                        break;
+                    }
+
+                    table->slots[curr] = table->slots[next];
+                    table->slots[curr].psl--;
+                    curr = next;
+                }
+
+                table->slots[curr].state = SLOT_EMPTY;
+                table->slots[curr].ip_address = NULL;
+                table->slots[curr].psl = 0;
+                table->slots[curr].failed_attempts = 0;
+
+                
+                table->count--;
                 return true;
             }
 
@@ -323,11 +329,10 @@ void ip_table_oa_destroy(IpTableOA *table) {
     table->slots = NULL;
     table->count = 0;
     table->capacity = 0;
-    table->tombstone_count = 0;
     free(table);
 }
 
-size_t ip_table_oa_max_psl(IpTableOA *table) {
+size_t ip_table_oa_max_psl(const IpTableOA *table) {
 
     if (table == NULL) {
         return 0;

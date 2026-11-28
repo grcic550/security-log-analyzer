@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "ip_heap.h"
 
@@ -112,7 +113,7 @@ static void sift_down(IpMinHeap *heap, size_t idx) {
 
 IpMinHeap *ip_heap_create(size_t capacity) {
 
-    if (capacity == 0) {
+    if (capacity == 0 || capacity > SIZE_MAX / sizeof(IpRankEntry)) {
         return NULL;
     }
 
@@ -219,7 +220,9 @@ bool ip_heap_top_k_from_table(
         return false;
     }
 
-    if (k == 0){
+    size_t table_size = ip_table_size(table);
+
+    if (k == 0 || table_size == 0){
         *out_count = 0;
         return true;
     }
@@ -228,7 +231,9 @@ bool ip_heap_top_k_from_table(
         return false;
     }
 
-    IpMinHeap *heap = ip_heap_create(k);
+    size_t effective_k = (k < table_size) ? k : table_size;
+
+    IpMinHeap *heap = ip_heap_create(effective_k);
 
     if (heap == NULL){
         fprintf(stderr, "Failed to allocate memory for heap!\n");

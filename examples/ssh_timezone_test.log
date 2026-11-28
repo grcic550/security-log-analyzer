@@ -1,0 +1,4 @@
+Nov 14 10:15:00 server1 sshd[1234]: Failed password for root from 192.168.1.20 port 52341 ssh2
+Nov 14 10:15:10 server1 sshd[1235]: Failed password for admin from 192.168.1.20 port 52342 ssh2
+Nov 14 10:15:20 server1 sshd[1236]: Failed password for invalid user test from 192.168.1.20 port 52343 ssh2
+Nov 14 10:16:30 server1 sshd[1237]: Accepted password for ante from 192.168.1.30 port 52344 ssh2

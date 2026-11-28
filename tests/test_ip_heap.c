@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "ip_heap.h"
 
@@ -217,12 +218,40 @@ static void test_top_k_empty_and_zero(void){
     ip_table_destroy(table);
 }
 
+static void test_edge_cases(void){
+
+    assert(ip_heap_create(SIZE_MAX) == NULL);
+    assert(ip_heap_create((SIZE_MAX / sizeof(IpRankEntry)) + 1) == NULL);
+
+    IpTable *table = ip_table_create(3);
+    assert(table != NULL);
+
+    insert_n(table, "192.168.1.20", 3);
+    insert_n(table, "192.168.1.30", 2);
+    insert_n(table, "192.168.1.40", 7);
+
+    IpRankEntry out[3];
+    size_t count = 0;
+
+    assert(ip_heap_top_k_from_table(
+        table,
+        SIZE_MAX,
+        out,
+        &count
+    ));
+
+    assert(count == 3);
+
+    ip_table_destroy(table);
+}
+
 int main(void) {
 
     test_ip_heap();
     test_top_k_empty_and_zero();
     test_top_k_from_table();
     test_top_k_larger_than_table();
+    test_edge_cases();
 
     printf("All tests pass!\n\n");
 

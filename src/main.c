@@ -15,6 +15,11 @@
 #include "ip_table.h"
 #include "ip_heap.h"
 
+typedef struct {
+    TimestampMode timezone_mode;
+    double window_seconds;
+}BurstPrintContext;
+
 static const char *parse_issue_message(ParseIssue issue) {
 
     switch (issue) {
@@ -98,11 +103,58 @@ static void print_account_targeting_alert(const AccountTargetingAlert *alert, vo
     printf("Window end: %-21s\n", end);
 }
 
+static void print_burst_alert(const BurstAlert *alert, void *context){
+
+    if (alert == NULL || context == NULL){
+        fprintf(stderr, "Error! Either alert or timezone mode is not good!\n");
+        return;
+    }
+
+    const BurstPrintContext *ctx = context;
+    char start[64];
+    char end[64];
+
+    
+    if (!format_timestamp(
+        alert->window_start, ctx->timezone_mode, start, sizeof(start)
+    ) || !format_timestamp(alert->window_end, ctx->timezone_mode, end, sizeof(end))){
+
+        fprintf(stderr, "Failed to format alert timestamp!\n");
+        return;
+    }
+    
+    printf("\n[BRUTE FORCE]\n");
+    printf("IP Address: %-21s\n", alert->ip_address);
+    printf("Failed attempts: %-21zu\n", alert->failed_attempts);
+    printf("Window size: %g seconds \n", ctx->window_seconds);
+    printf("Window start: %-21s\n", start);
+    printf("Window end: %-21s\n", end);
+}
+
+static void print_count_alert(const CountAlert *alert, void *context){
+    (void)context;
+
+    if (alert == NULL){
+        return;
+    }
+
+    printf("[ALERT] %-20s %zu failed attempts\n", alert->ip_address, alert->failed_attempts);
+}
+
 int main(int argc, char *argv[]) {
 
     const char *log_path = "examples/sample.log";
-    size_t threshold = 3;
-    double window_seconds = 60.0;
+    
+    DetectorConfig config = detector_config_default();
+    size_t default_threshold = config.count_threshold;
+    double default_window = config.burst_window_seconds;
+
+    bool count_threshold_set = false;
+    bool burst_threshold_set = false;
+    bool burst_window_set = false;
+    bool target_usernames_set = false;
+    bool target_window_set = false;
+
     int year = 2026;
     size_t top_k = 0;
 
@@ -130,7 +182,7 @@ int main(int argc, char *argv[]) {
                 return EXIT_FAILURE;
             }
 
-            if (!parse_positive_size(argv[++i], &threshold)) {
+            if (!parse_positive_size(argv[++i], &default_threshold)) {
                 fprintf(stderr, "Invalid threshold!\n");
                 return EXIT_FAILURE;
             }
@@ -140,10 +192,80 @@ int main(int argc, char *argv[]) {
                 return EXIT_FAILURE;
             }
 
-            if (!parse_positive_double(argv[++i], &window_seconds)) {
+            if (!parse_positive_double(argv[++i], &default_window)) {
                 fprintf(stderr, "Invalid window!\n");
                 return EXIT_FAILURE;
             }
+        }else if (strcmp(argv[i], "--count-threshold") == 0){
+
+            if (i + 1 >= argc){
+                fprintf(stderr, "Missing count-threshold value!!\n");
+                return EXIT_FAILURE;
+            }
+
+            if (!parse_positive_size(argv[++i], &config.count_threshold)){
+                fprintf(stderr, "Invalid count-threshold!!\n");
+                return EXIT_FAILURE;
+            }
+
+            count_threshold_set = true;
+
+        } else if (strcmp(argv[i], "--burst-threshold") == 0){
+
+            if (i + 1 >= argc){
+                fprintf(stderr, "Missing burst-threshold value!!\n");
+                return EXIT_FAILURE;
+            }
+
+            if (!parse_positive_size(argv[++i], &config.burst_threshold)){
+                fprintf(stderr, "Invalid burst-threshold value!\n");
+                return EXIT_FAILURE;
+            }
+
+            burst_threshold_set = true;
+
+        } else if (strcmp(argv[i], "--burst-window") == 0){
+
+            if (i + 1 >= argc){
+                fprintf(stderr, "Missing value for burst-window!\n");
+                return EXIT_FAILURE;
+            }
+
+            if (!parse_positive_double(argv[++i], &config.burst_window_seconds)){
+                fprintf(stderr, "Invalid burst-window value!\n");
+                return EXIT_FAILURE;
+            }
+
+            burst_window_set = true;
+
+        } else if (strcmp(argv[i], "--target-usernames") == 0){
+
+            if (i +1 >= argc){
+                fprintf(stderr, "Missing target-usernames value!!\n");
+                return EXIT_FAILURE;
+            }
+
+            if (!parse_positive_size(argv[++i], &config.target_min_usernames)){
+                fprintf(stderr, "Invalid target-usernames value!\n");
+                return EXIT_FAILURE;
+            }
+
+            target_usernames_set = true;
+
+        } else if (strcmp(argv[i], "--target-window") == 0){
+
+            if (i + 1 >= argc){
+                fprintf(stderr, "Missing target-window value!\n");
+                return EXIT_FAILURE;
+            }
+
+            if (!parse_positive_double(argv[++i], &config.target_window_seconds)){
+                fprintf(stderr, "Invalid target-window value!\n");
+                return EXIT_FAILURE;
+            }
+
+            target_window_set = true;
+
         } else if (strcmp(argv[i], "--detector") == 0) {
 
             const char *selected = argv[++i];
@@ -241,6 +363,17 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Unknown argument: %s\n", argv[i]);
             return EXIT_FAILURE;
         }
+    }
+
+    if (!count_threshold_set) { config.count_threshold = default_threshold;}
+    if (!burst_threshold_set) { config.burst_threshold = default_threshold;}
+    if (!burst_window_set) {config.burst_window_seconds = default_window;}
+    if (!target_usernames_set) {config.target_min_usernames = default_threshold;}
+    if (!target_window_set) {config.target_window_seconds = default_window;}
+
+    if (!detector_config_is_valid(&config)){
+        fprintf(stderr, "Invalid detector configuration!\n");
+        return EXIT_FAILURE;
     }
 
     if (file_provided && !format_provided) {
@@ -383,14 +516,39 @@ int main(int argc, char *argv[]) {
             ip_table_print_report(table);
         }
 
-        size_t suspicious_count = detector_print_alerts(table, threshold);
+        size_t suspicious_count = 0;
+        printf("\n========== SECURITY ALERTS ==========\n");
+
+        if (!detector_find_count_alerts(table, config.count_threshold, print_count_alert, 
+            NULL, &suspicious_count
+        )){
+            fprintf(stderr, "Failed to detect suspicious IP addresses!\n");
+            goto cleanup;
+        }
+
+        if (suspicious_count == 0){
+            printf("No suspicious IP addresses found.\n");
+        }
 
         printf("\nTotal suspicious IP addresses: %zu\n", suspicious_count);
     }
 
     if (mode == DETECTOR_BURST || mode == DETECTOR_ALL) {
+
+        size_t window_alerts = 0;
+        BurstPrintContext burst_ctx = {
+            .timezone_mode = timezone_mode,
+            .window_seconds = config.burst_window_seconds
+        };
         printf("\n========== TIME-WINDOW SECURITY ALERTS ==========\n");
-        size_t window_alerts = detector_analyze_windows_in_store(store, threshold, window_seconds);
+        
+        if (!detector_find_burst_alerts_in_store(
+            store, config.burst_threshold, config.burst_window_seconds, print_burst_alert, &burst_ctx,
+            &window_alerts
+        )){
+            fprintf(stderr, "Failed to collect context!\n");
+            goto cleanup;
+        }
         printf("\nIP addresses with suspicious bursts: %zu\n", window_alerts);
     }
 
@@ -398,7 +556,7 @@ int main(int argc, char *argv[]) {
         size_t alerts_found = 0;
         printf("\n========== MULTI-ACCOUNT TARGETING ==========\n");
 
-        if (!detector_find_account_targeting_in_store(store, threshold, window_seconds,
+        if (!detector_find_account_targeting_in_store(store, config.target_min_usernames, config.target_window_seconds,
                                                       print_account_targeting_alert, &timezone_mode,
                                                       &alerts_found)) {
             fprintf(stderr, "Failed to detect account targeting!\n");

@@ -1,10 +1,10 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdint.h>
 
 #include "detector.h"
 #include "entries.h"
@@ -12,7 +12,9 @@
 
 typedef struct {
     size_t threshold;
-    size_t alert_count;
+    CountAlertCallback callback;
+    void *user_context;
+    size_t *alerts_found;
 } DetectorContext;
 
 typedef struct {
@@ -71,30 +73,67 @@ static bool username_frequency_decrement(UsernameFrequencyTable *table, const ch
 
     size_t index = hash_username(username, table->bucket_count);
 
-    UsernameNode *current = table->buckets[index];
+    UsernameNode **link = &table->buckets[index];
 
-    while (current != NULL) {
+    while (*link != NULL) {
+
+        UsernameNode *current = *link;
 
         if (strcmp(current->username, username) == 0) {
-
-            if (current->frequency == 0) {
-                return false;
-            }
-
             current->frequency--;
 
             if (current->frequency == 0) {
+                *link = current->next;
+                free(current);
                 table->distinct_count--;
             }
 
             return true;
         }
 
-        current = current->next;
+        link = &current->next;
     }
 
     return false;
 }
+
+static bool username_frequency_resize(UsernameFrequencyTable *table){
+
+    if (table == NULL || table->buckets == NULL || table->bucket_count == 0 ||
+        table->bucket_count > SIZE_MAX / 2){
+            return false;
+    }
+
+    size_t new_bucket_count = table->bucket_count * 2;
+
+    UsernameNode **new_buckets = calloc(new_bucket_count, sizeof(*new_buckets));
+
+    if (new_buckets == NULL){
+        return false;
+    }
+
+    for (size_t i = 0; i < table->bucket_count; i++){
+
+        UsernameNode *current = table->buckets[i];
+
+        while (current != NULL){
+            UsernameNode *next = current->next;
+            size_t new_index = hash_username(current->username, new_bucket_count);
+
+            current->next = new_buckets[new_index];
+            new_buckets[new_index] = current;
+
+            current = next;
+        }
+    }
+
+    free(table->buckets);
+    table->buckets = new_buckets;
+    table->bucket_count = new_bucket_count;
+
+    return true;
+}
+
 
 static bool username_frequency_increment(UsernameFrequencyTable *table, const char *username) {
     if (table == NULL || username == NULL || table->buckets == NULL || table->bucket_count == 0) {
@@ -110,15 +149,19 @@ static bool username_frequency_increment(UsernameFrequencyTable *table, const ch
 
         if (strcmp(current->username, username) == 0) {
 
-            if (current->frequency == 0) {
-                table->distinct_count++;
-            }
-
             current->frequency++;
             return true;
         }
 
         current = current->next;
+    }
+
+    if ((double)(table->distinct_count + 1) / (double)table->bucket_count >= 0.75){
+        if (!username_frequency_resize(table)){
+            return false;
+        }
+
+        index = hash_username(username, table->bucket_count);
     }
 
     UsernameNode *new_node = malloc(sizeof(*new_node));
@@ -140,6 +183,10 @@ static bool username_frequency_increment(UsernameFrequencyTable *table, const ch
 static bool username_frequency_init(UsernameFrequencyTable *table, size_t bucket_count) {
 
     if (table == NULL || bucket_count == 0) {
+        return false;
+    }
+
+    if (bucket_count > SIZE_MAX / 2){
         return false;
     }
 
@@ -235,6 +282,77 @@ static void collect_account_targeting_event(const LogEventView *event, void *con
     }
 }
 
+static bool analyze_account_targeting_episode(
+    const AccountTargetingEvent *events,
+    size_t ep_start,
+    size_t ep_end,
+    size_t min_distinct_usernames,
+    double window_seconds,
+    AccountTargetingCallback callback,
+    void *context,
+    size_t *alerts_found
+){
+    UsernameFrequencyTable frequencies = {0};
+
+    if (!username_frequency_init(&frequencies, 16)){
+        return false;
+    }
+
+    bool found_peak = false;
+    AccountTargetingAlert best = {0};
+    size_t left = ep_start;
+
+    for (size_t right = ep_start; right < ep_end; right++){
+        while (difftime(events[right].timestamp, events[left].timestamp) >
+        window_seconds){
+            if(!username_frequency_decrement(
+                &frequencies,
+                events[left].username
+            )){
+                username_frequency_destroy(&frequencies);
+                return false;
+            }
+            left++;
+        }
+
+        if (!username_frequency_increment(
+            &frequencies,
+            events[right].username
+        )){
+            username_frequency_destroy(&frequencies);
+            return false;
+        }
+
+        if (frequencies.distinct_count >= min_distinct_usernames){
+
+            size_t attempts = right - left + 1;
+            size_t distinct = frequencies.distinct_count;
+
+            bool is_better = !found_peak ||
+                            distinct > best.distinct_usernames ||
+                            (distinct == best.distinct_usernames && attempts > best.failed_attempts);
+            if (is_better){
+
+                best.ip_address = events[ep_start].ip_address;
+                best.window_start = events[left].timestamp;
+                best.window_end = events[right].timestamp;
+                best.failed_attempts = attempts;
+                best.distinct_usernames = distinct;
+
+                found_peak = true;
+            }
+        }
+    }
+
+    if (found_peak){
+        callback(&best, context);
+        (*alerts_found)++;
+    }
+
+    username_frequency_destroy(&frequencies);
+    return true;
+}
+
 static bool analyze_account_targeting_events(AccountTargetingCollector *collector,
                                              size_t min_distinct_usernames, double window_seconds,
                                              AccountTargetingCallback callback, void *context,
@@ -243,56 +361,47 @@ static bool analyze_account_targeting_events(AccountTargetingCollector *collecto
     size_t start = 0;
 
     while (start < collector->count) {
-        UsernameFrequencyTable frequencies = {0};
-
-        if (!username_frequency_init(&frequencies, 16)) {
-            return false;
-        }
 
         size_t end = start + 1;
 
-        while (end < collector->count && strcmp(collector->events[start].ip_address,
-                                                collector->events[end].ip_address) == 0) {
-            end++;
+        while(end < collector->count &&
+            strcmp(collector->events[start].ip_address,
+                    collector->events[end].ip_address
+            ) == 0){
+
+                end++;
         }
 
-        size_t left = start;
+        size_t ep_start = start;
+        while(ep_start < end){
+            size_t ep_end = ep_start + 1;
+            while (ep_end < end &&
+                    difftime(collector->events[ep_end].timestamp,
+                            collector->events[ep_end - 1].timestamp        
+                    ) <= window_seconds){
 
-        for (size_t right = start; right < end; right++) {
+                    ep_end++;
+            }
 
-            while (difftime(collector->events[right].timestamp, collector->events[left].timestamp) >
-                   window_seconds) {
-
-                if (!username_frequency_decrement(&frequencies, collector->events[left].username)) {
-                    username_frequency_destroy(&frequencies);
+            if (ep_end - ep_start >= min_distinct_usernames){
+                if (!analyze_account_targeting_episode(
+                    collector->events,
+                    ep_start,
+                    ep_end,
+                    min_distinct_usernames,
+                    window_seconds,
+                    callback,
+                    context,
+                    alerts_found
+                )){
                     return false;
                 }
-
-                left++;
             }
 
-            if (!username_frequency_increment(&frequencies, collector->events[right].username)) {
-                username_frequency_destroy(&frequencies);
-                return false;
-            }
-
-            if (frequencies.distinct_count >= min_distinct_usernames) {
-                AccountTargetingAlert alert = {0};
-
-                alert.ip_address = collector->events[start].ip_address;
-                alert.window_start = collector->events[left].timestamp;
-                alert.window_end = collector->events[right].timestamp;
-                alert.failed_attempts = right - left + 1;
-                alert.distinct_usernames = frequencies.distinct_count;
-
-                callback(&alert, context);
-                (*alerts_found)++;
-                break;
-            }
+            ep_start = ep_end;
         }
-        start = end;
 
-        username_frequency_destroy(&frequencies);
+        start = end;
     }
 
     return true;
@@ -334,6 +443,42 @@ bool detector_find_account_targeting_in_store(const LogStore *store, size_t min_
     return true;
 }
 
+static bool find_peak_burst_in_episode(
+    const FailedEvent *events,
+    size_t ep_start,
+    size_t ep_end,
+    double window_seconds,
+    FailureWindowPeak *out_peak
+){
+
+    if (events == NULL || ep_start >= ep_end || !isfinite(window_seconds) ||
+        window_seconds <= 0.0 || out_peak == NULL    
+    ){
+        return false;
+    }
+
+    size_t left = ep_start;
+    FailureWindowPeak best = {0};
+
+    for (size_t right = ep_start; right < ep_end; right++){
+
+        while (difftime(events[right].timestamp, events[left].timestamp) > window_seconds){
+            left++;
+        }
+
+        size_t attempts = right - left + 1;
+
+        if (attempts > best.failed_attempts){
+            best.failed_attempts = attempts;
+            best.window_start = events[left].timestamp;
+            best.window_end = events[right].timestamp;
+        }
+    }
+
+    *out_peak = best;
+    return true;
+}
+
 static int compare_failed_events(const void *a, const void *b) {
 
     const FailedEvent *first = a;
@@ -359,7 +504,7 @@ static int compare_failed_events(const void *a, const void *b) {
 static void collect_failed_event(const LogEventView *event, void *context) {
     FailureCollector *collector = context;
 
-    if (event->result == AUTH_FAILURE) {
+    if (event->result == AUTH_FAILURE && collector->count < collector->capacity) {
 
         collector->events[collector->count].timestamp = event->timestamp;
         collector->events[collector->count].ip_address = event->ip_address;
@@ -368,109 +513,164 @@ static void collect_failed_event(const LogEventView *event, void *context) {
     }
 }
 
-static size_t analyze_collected_failures(FailureCollector *collector, size_t threshold,
-                                         double window_seconds) {
+static void analyze_collected_failures(FailureCollector *collector, size_t threshold,
+                                         double window_seconds, BurstAlertsCallback callback, void *context, size_t *alerts_found) {
 
-    qsort(collector->events, collector->count, sizeof(*collector->events), compare_failed_events);
+    if (threshold == 0 || !isfinite(window_seconds) || window_seconds <= 0.0){
+        return;
+    }
 
-    time_t *group_timestamps = malloc(collector->count * sizeof(*group_timestamps));
-
-    if (group_timestamps == NULL) {
-        fprintf(stderr, "Failed to allocate memory for timestamps group!\n");
-        return 0;
+    if (collector->count > 1){
+        qsort(collector->events, collector->count, sizeof(*collector->events), compare_failed_events);
     }
 
     size_t start = 0;
-    size_t count = 0;
 
-    while (start < collector->count) {
+    while (start < collector->count){
 
         size_t end = start + 1;
 
-        while (end < collector->count && strcmp(collector->events[start].ip_address,
-                                                collector->events[end].ip_address) == 0) {
+        while (end < collector->count && strcmp(
+            collector->events[start].ip_address, collector->events[end].ip_address
+        ) == 0){
             end++;
         }
 
-        size_t group_count = end - start;
+        size_t ep_start = start;
 
-        for (size_t j = 0; j < group_count; j++) {
-            group_timestamps[j] = collector->events[start + j].timestamp;
+        while (ep_start < end){
+            size_t ep_end = ep_start + 1;
+            
+            while(ep_end < end && difftime(
+                collector->events[ep_end].timestamp, collector->events[ep_end - 1].timestamp
+            ) <= window_seconds){
+                ep_end++;
+            }
+
+            if (ep_end - ep_start >= threshold){
+
+                FailureWindowPeak peak = {0};
+                if(find_peak_burst_in_episode(
+                    collector->events,
+                    ep_start,
+                    ep_end,
+                    window_seconds,
+                    &peak
+                ) && peak.failed_attempts >= threshold){
+
+                    BurstAlert alert = {
+                        .ip_address = collector->events[start].ip_address,
+                        .window_start = peak.window_start,
+                        .window_end = peak.window_end,
+                        .failed_attempts = peak.failed_attempts
+                    };
+
+                    callback(&alert, context);
+                    (*alerts_found)++;
+                }
+            }
+            ep_start = ep_end;
         }
-
-        size_t max_attempts = max_failures_in_window(group_timestamps, group_count, window_seconds);
-
-        if (threshold > 0 && max_attempts >= threshold) {
-            printf("\n[BRUTE FORCE] %s - %zu failures within %g seconds\n",
-                   collector->events[start].ip_address, max_attempts, window_seconds);
-
-            count++;
-        }
-
         start = end;
     }
-
-    free(group_timestamps);
-
-    return count;
 }
 
-size_t detector_analyze_windows_in_store(const LogStore *store, size_t threshold,
-                                         double window_seconds) {
-    size_t capacity = log_store_get_count(store);
+bool detector_find_burst_alerts_in_store(
+    const LogStore *store, size_t threshold, double window_seconds,
+    BurstAlertsCallback callback, void *context,
+    size_t *alerts_found
+){
 
-    if (capacity == 0) {
-        return 0;
+    if (store == NULL || threshold == 0 || !isfinite(window_seconds) ||
+        window_seconds <= 0.0 || callback == NULL || alerts_found == NULL
+    ){
+        return false;
     }
 
-    FailedEvent *events = malloc(capacity * sizeof(*events));
+    *alerts_found = 0;
 
-    if (events == NULL) {
-        fprintf(stderr, "Failed to allocate memory for events!\n");
-        return 0;
+    size_t failure_count = log_store_count_by_event(store, AUTH_FAILURE);
+
+    if (failure_count == 0){
+        return true;
     }
 
-    FailureCollector collector = {.events = events, .count = 0, .capacity = capacity};
-
-    log_store_foreach(store, collect_failed_event, &collector);
-
-    if (collector.count == 0) {
-        free(events);
-        return 0;
+    if (failure_count > SIZE_MAX / sizeof(FailedEvent)){
+        return false;
     }
 
-    size_t count = analyze_collected_failures(&collector, threshold, window_seconds);
+    FailedEvent *events = malloc(failure_count * sizeof(*events));
+
+    if (events == NULL){
+        return false;
+    }  
+
+    FailureCollector collector = {
+        .events = events,
+        .count = 0,
+        .capacity = failure_count
+    };
+
+    log_store_foreach(
+        store,
+        collect_failed_event,
+        &collector
+    );
+
+    analyze_collected_failures(
+        &collector,
+        threshold,
+        window_seconds,
+        callback,
+        context,
+        alerts_found
+    );
 
     free(events);
-    return count;
+    return true;
 }
 
 static void detect_ip(const char *ip_address, size_t failed_attempts, void *context) {
     DetectorContext *config = context;
 
     if (is_suspicious(failed_attempts, config->threshold)) {
-        printf("[ALERT] %-20s %zu failed attempts\n", ip_address, failed_attempts);
 
-        config->alert_count++;
+        CountAlert alert = {
+            .ip_address = ip_address,
+            .failed_attempts = failed_attempts
+        };
+
+        config->callback(&alert, config->user_context);
+        (*config->alerts_found)++;
     }
 }
 
-size_t detector_print_alerts(const IpTable *table, size_t threshold) {
-    if (table == NULL || threshold == 0) {
-        return 0;
+bool detector_find_count_alerts(
+    const IpTable *table, size_t threshold,
+    CountAlertCallback callback, void *context,
+    size_t *alerts_found
+){
+
+    if (table == NULL || threshold == 0 || callback == NULL || alerts_found == NULL){
+        return false;
     }
 
-    DetectorContext config = {.threshold = threshold, .alert_count = 0};
+    *alerts_found = 0;
 
-    printf("\n==========  SECURITY ALERTS ==========\n");
+    DetectorContext config = {
+        .threshold = threshold,
+        .alerts_found = alerts_found,
+        .callback = callback,
+        .user_context = context
+    };
 
-    ip_table_foreach(table, detect_ip, &config);
+    ip_table_foreach(
+        table,
+        detect_ip,
+        &config
+    );
 
-    if (config.alert_count == 0) {
-        printf("No suspicious IP addresses found.\n");
-    }
-
-    return config.alert_count;
+    return true;
 }
 
 bool is_suspicious(size_t failed_attempts, size_t threshold) {
@@ -494,21 +694,77 @@ size_t max_failures_in_window(const time_t *timestamps, size_t count, double win
         return 0;
     }
 
-    size_t max_attempts = 0;
+    FailureWindowPeak peak = {0};
+
+    if (!find_peak_failure_window(
+        timestamps,
+        count,
+        window_seconds,
+        &peak
+    )){
+        return 0;
+    }
+
+    return peak.failed_attempts;
+}
+
+bool find_peak_failure_window(
+    const time_t *timestamps, size_t count,
+    double window_seconds, FailureWindowPeak *out_peak
+){
+
+    if (timestamps == NULL || count == 0 ||
+        !isfinite(window_seconds) || window_seconds <= 0.0 || out_peak == NULL
+    ){
+        return false;
+    }
+
     size_t left = 0;
+    FailureWindowPeak best = {0};
 
-    for (size_t right = 0; right < count; right++) {
-        size_t attempts = 0;
+    for (size_t right = 0; right < count; right++){
 
-        while (difftime(timestamps[right], timestamps[left]) > window_seconds) {
+        while (difftime(timestamps[right], timestamps[left]) > window_seconds){
             left++;
         }
 
-        attempts = right - left + 1;
+        size_t attempts = right - left + 1;
 
-        if (attempts > max_attempts) {
-            max_attempts = attempts;
+        if (attempts > best.failed_attempts){
+            best.failed_attempts = attempts;
+            best.window_start = timestamps[left];
+            best.window_end = timestamps[right];
         }
+
     }
-    return max_attempts;
+
+    *out_peak = best;
+    return true;
 }
+
+DetectorConfig detector_config_default(void){
+    
+    DetectorConfig config = {
+        .burst_threshold = 3,
+        .burst_window_seconds = 60.0,
+        .count_threshold = 3,
+        .target_min_usernames = 3,
+        .target_window_seconds = 60.0
+    };
+
+    return config;
+}
+
+bool detector_config_is_valid(const DetectorConfig *config){
+
+    if (config == NULL || config->burst_threshold == 0 ||
+        config->count_threshold == 0 || config->target_min_usernames == 0||
+        !isfinite(config->burst_window_seconds) || !isfinite(config->target_window_seconds) ||
+        config->burst_window_seconds <= 0.0 || config->target_window_seconds <= 0.0
+    ){
+        return false;
+    }
+
+    return true;
+}
+

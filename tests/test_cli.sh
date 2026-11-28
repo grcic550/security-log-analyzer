@@ -357,3 +357,45 @@ else
     echo "FAIL: Big top doesnt output cleanly"
     exit 1
 fi
+
+count_threshold5=$(./build/loganalyzer --file examples/sample.log --format simple --count-threshold 5 --threshold 3)
+
+if printf "%s\n" "$count_threshold5" | grep -Fq "Total suspicious IP addresses: 0"; then
+    echo "PASS: count-threshold 5 passes."
+else
+    echo "FAIL: count-threshold 5 fails."
+    exit 1
+fi
+
+count_threshold3=$(./build/loganalyzer --file examples/sample.log --format simple --count-threshold 3 --threshold 3)
+
+if printf "%s\n" "$count_threshold3" | grep -Fq "IP addresses with suspicious bursts: 1"; then
+    echo "PASS: count-threshold 3 passes."
+else
+    echo "FAIL: count-threshold 3 fails."
+    exit 1
+fi
+
+window_override=$(./build/loganalyzer --file examples/sample.log --format simple --threshold 3 --window 20 --burst-window 60)
+
+if printf "%s\n" "$window_override" | grep -Fq "IP addresses with suspicious bursts: 1"; then
+    echo "PASS: window override pass"
+else
+    echo "FAIL: window override fail"
+    exit 1
+fi
+
+if ./build/loganalyzer --file examples/sample.log --format simple --burst-threshold 0 --threshold 3 > /dev/null 2>&1; then
+    echo "FAIL: invalid override accepted"
+    exit 1
+else
+    echo "PASS: invalid override rejected"
+fi
+
+if ./build/loganalyzer --file examples/sample.log --format simple --threshold 3 --target-window -5 > /dev/null 2>&1; then
+    echo "FAIL: invalid override accepted"
+    exit 1
+else
+    echo "PASS: invalid override rejected"
+fi
+
